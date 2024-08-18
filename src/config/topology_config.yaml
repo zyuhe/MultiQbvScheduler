@@ -1,0 +1,163 @@
+# 9flow success case
+- node_id: 0
+  end_device: 0
+  plane: 0
+  ports:
+    - port_id: 0
+      port_speed: 1000
+      allowed_vlan:
+#        - 10 # MSTP discard
+        - 20
+      neighbor_node: 1
+      neighbor_port: 3
+    - port_id: 1
+      port_speed: 1000
+      allowed_vlan:
+        - 10
+#        - 20 # MSTP discard
+      neighbor_node: 5
+      neighbor_port: 2
+    - port_id: 2
+      port_speed: 100
+      allowed_vlan:
+        - 10
+        - 20
+      neighbor_node: 6
+      neighbor_port: 0
+- node_id: 1
+  end_device: 0
+  plane: 0
+  ports:
+    - port_id: 0
+      port_speed: 1000
+      allowed_vlan:
+#        - 10
+        - 20
+      neighbor_node: 2
+      neighbor_port: 1
+    - port_id: 3
+      port_speed: 1000
+      allowed_vlan:
+#        - 10
+        - 20
+      neighbor_node: 0
+      neighbor_port: 0
+- node_id: 2
+  end_device: 0
+  plane: 0
+  ports:
+    - port_id: 0
+      port_speed: 1000
+      allowed_vlan:
+        - 10
+#        - 20 # forbin flow from 70 to 50 use vlan 20
+      neighbor_node: 3
+      neighbor_port: 1
+    - port_id: 1
+      port_speed: 1000
+      allowed_vlan:
+        - 10
+        - 20
+      neighbor_node: 1
+      neighbor_port: 0
+    - port_id: 2
+      port_speed: 100
+      allowed_vlan:
+        - 10
+        - 20
+      neighbor_node: 7
+      neighbor_port: 0
+- node_id: 3
+  end_device: 0
+  plane: 1
+  ports:
+    - port_id: 0
+      port_speed: 1000
+      allowed_vlan:
+        - 10
+        - 20
+      neighbor_node: 4
+      neighbor_port: 3
+    - port_id: 1
+      port_speed: 1000
+      allowed_vlan:
+        - 10
+        - 20
+      neighbor_node: 2
+      neighbor_port: 0
+    - port_id: 4
+      port_speed: 100
+      allowed_vlan:
+        - 10
+        - 20
+      neighbor_node: 8
+      neighbor_port: 0
+- node_id: 4
+  end_device: 0
+  plane: 1
+  ports:
+    - port_id: 0
+      port_speed: 1000
+      allowed_vlan:
+        - 10
+        - 20
+      neighbor_node: 5
+      neighbor_port: 1
+    - port_id: 3
+      port_speed: 1000
+      allowed_vlan:
+        - 10
+        - 20
+      neighbor_node: 3
+      neighbor_port: 0
+- node_id: 5
+  end_device: 0
+  plane: 1
+  ports:
+    - port_id: 2
+      port_speed: 1000
+      allowed_vlan:
+        - 10
+        - 20
+      neighbor_node: 0
+      neighbor_port: 1
+    - port_id: 1
+      port_speed: 1000
+      allowed_vlan:
+        - 10
+        - 30
+      neighbor_node: 4
+      neighbor_port: 0
+- node_id: 6
+  end_device: 1
+  plane: 0
+  ports:
+    - port_id: 0
+      port_speed: 100
+      allowed_vlan:
+        - 10
+        - 20
+      neighbor_node: 0
+      neighbor_port: 2
+- node_id: 7
+  end_device: 1
+  plane: 0
+  ports:
+    - port_id: 0
+      port_speed: 100
+      allowed_vlan:
+        - 10
+        - 20
+      neighbor_node: 2
+      neighbor_port: 2
+- node_id: 8
+  end_device: 1
+  plane: 1
+  ports:
+    - port_id: 0
+      port_speed: 100
+      allowed_vlan:
+        - 10
+        - 20
+      neighbor_node: 3
+      neighbor_port: 4

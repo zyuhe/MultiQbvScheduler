@@ -1,0 +1,80 @@
+- id: 0
+  src_node_id: 6
+  dst_node_ids:
+  - 7
+  multicast_id: 10
+  vlan_id: 20
+  pcp: 3
+  size: 100
+  interval: 1000000
+  max_jitter: 200000
+  max_latency: 200000
+- id: 1
+  src_node_id: 6
+  dst_node_ids:
+  - 8
+  multicast_id: 30
+  vlan_id: 10
+  pcp: 4
+  size: 200
+  interval: 2000000
+  max_jitter: 200000
+  max_latency: 200000
+- id: 2
+  src_node_id: 6
+  dst_node_ids:
+  - 7
+  - 8
+  multicast_id: 0
+  vlan_id: 10
+  pcp: 5
+  size: 100
+  interval: 1000000
+  max_jitter: 200000
+  max_latency: 200000
+- id: 3
+  src_node_id: 7
+  dst_node_ids:
+  - 6
+  multicast_id: 11
+  vlan_id: 20
+  pcp: 6
+  size: 400
+  interval: 2000000
+  max_jitter: 200000
+  max_latency: 300000
+- id: 4
+  src_node_id: 7
+  dst_node_ids:
+  - 8
+  multicast_id: 31
+  vlan_id: 10
+  pcp: 3
+  size: 500
+  interval: 1000000
+  max_jitter: 200000
+  max_latency: 200000
+- id: 5
+  src_node_id: 8
+  dst_node_ids:
+  - 6
+  - 7
+  multicast_id: 1
+  vlan_id: 10
+  pcp: 3
+  size: 100
+  interval: 2000000
+  max_jitter: 200000
+  max_latency: 300000
+- id: 6
+  src_node_id: 8
+  dst_node_ids:
+  - 6
+  - 7
+  multicast_id: 2
+  vlan_id: 10
+  pcp: 4
+  size: 200
+  interval: 1000000
+  max_jitter: 200000
+  max_latency: 200000
