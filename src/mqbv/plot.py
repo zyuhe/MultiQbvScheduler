@@ -72,6 +72,9 @@ def draw_gantt_chart(name: str, timeline: list[list[int]], hyper_period):
     plt.grid(True)
 
     plt.tight_layout()
+    if "savefig" in os.listdir("./"):
+        shutil.rmtree("./savefig/")
+    os.mkdir("./savefig/")
     plt.savefig(f"./savefig/{name}.jpg", dpi=300)
     plt.show()
 
