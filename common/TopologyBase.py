@@ -1,19 +1,22 @@
 '''
 -*- coding: utf-8 -*-
-@Time    :   2024/3/20 21:06
-@Auther  :   zyh
-@Email   :
+@Time    :   2024/12/21 13:19
+@Author  :   zyh
+@Email   :   
 @Project :   MultiQbvScheduler
-@File    :   Topology.py
+@File    :   TopologyBase.py
 '''
+import math
+
 from z3 import *
+from typing import List
 
 
 class Port:
     '''
     port_speed : unit Mbps
     '''
-    def __init__(self, port_id, node_id, allowed_vlans: list[int], port_speed=100):
+    def __init__(self, port_id, node_id, allowed_vlans: List[int], port_speed=100):
         self.id = port_id
         self.node_id = node_id
         self.neighbor_node_id = -1
@@ -22,6 +25,7 @@ class Port:
         self.port_speed = port_speed
         self.used_bandwidth = 0
         self.occupied_bandwidth = 0
+        self.hyper_period = 1
         '''
         alpha_set omega_set unit: ns
         '''
@@ -29,6 +33,17 @@ class Port:
         self.omega_set = Array(f'node_{self.node_id}_port_{self.id}_omega', IntSort(), IntSort())
         self.window2last_hop_constraint_info = []
         self.window2queue_set = []
+        '''
+        for aco
+        [[ts_open, win_len, mstream_id, pcp, pre_node_id, pre_port_id],[],]
+        '''
+        self.TS_OPEN = 0
+        self.WIN_LEN = 1
+        self.MSTREAM_ID = 2
+        self.PCP = 3
+        self.PRE_NODE_ID = 4
+        self.PRE_PORT_ID = 5
+        self.windowsInfo = []
 
     def set_port_speed(self, port_speed):
         self.port_speed = port_speed
@@ -48,6 +63,22 @@ class Port:
     def add_occupied_bandwidth(self, bandwidth):
         self.occupied_bandwidth += bandwidth
 
+    def expand_hyper_period(self, new_period):
+        new_hyper_period = int(self.hyper_period) * int(new_period) / math.gcd(int(self.hyper_period), int(new_period))
+        times = int(new_hyper_period / self.hyper_period)
+        copy_windowsInfo = copy.deepcopy(self.windowsInfo)
+        for win_info in copy_windowsInfo:
+            for i in range(times-1):
+                win_info[self.TS_OPEN] += self.hyper_period
+                self.windowsInfo.append(win_info)
+        self.hyper_period = int(new_hyper_period)
+        self.update_windows_info()
+
+    def update_windows_info(self):
+        self.windowsInfo.sort(key=lambda x: x[self.TS_OPEN])
+
+    def clear_windows_info(self):
+        self.windowsInfo = []
 
 class Link:
     '''
@@ -102,8 +133,12 @@ class Node:
             if port.neighbor_node_id == neighbor_id:
                 return port
 
+    def clear_all_ports_winInfo(self):
+        for port in self.ports:
+            port.clear_windows_info()
 
-class Topology:
+
+class TopologyBase:
     def __init__(self, topology_id):
         self.id = topology_id
         self.nodes = list()
@@ -124,3 +159,6 @@ class Topology:
     def add_link(self, link: Link):
         self.links.append(link)
 
+    def clear_all_nodes_winInfo(self):
+        for node in self.nodes:
+            node.clear_all_ports_winInfo()

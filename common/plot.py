@@ -1,15 +1,17 @@
 '''
 -*- coding: utf-8 -*-
-@Time    :   2024/3/20 21:07
-@Auther  :   zyh
-@Email   :
+@Time    :   2024/12/21 13:21
+@Author  :   zyh
+@Email   :   
 @Project :   MultiQbvScheduler
 @File    :   plot.py
 '''
+
 import os
 import shutil
 import matplotlib.pyplot as plt
 import random
+from typing import List
 
 color_list = ['seagreen', 'skyblue', 'lime', 'maroon', 'lightsalmon',
               'grey', 'goldenrod', 'forestgreen', 'darkkhaki', 'coral',
@@ -40,7 +42,7 @@ def visualize_timeline(timelines: dict, hyper_period):
     return 0
 
 
-def draw_gantt_chart(name: str, timeline: list[list[int]], hyper_period):
+def draw_gantt_chart(name: str, timeline: List[List[int]], hyper_period):
     plt.figure(figsize=(12, 4))
     colors = generate_random_colors_hex(10, 100)
 
@@ -79,4 +81,3 @@ def draw_gantt_chart(name: str, timeline: list[list[int]], hyper_period):
     plt.show()
 
     return 0
-

@@ -1,15 +1,17 @@
 '''
 -*- coding: utf-8 -*-
-@Time    :   2024/3/20 21:06
-@Auther  :   zyh
-@Email   :
+@Time    :   2024/12/21 13:19
+@Author  :   zyh
+@Email   :   
 @Project :   MultiQbvScheduler
-@File    :   Stream.py
+@File    :   StreamBase.py
 '''
+
 from z3 import *
+from typing import List
 
 class Route:
-    def __init__(self, uni_stream_id, path: list[int]):
+    def __init__(self, uni_stream_id, path: List[int]):
         self.uni_stream_id = uni_stream_id
         self.path = path
 
@@ -90,4 +92,34 @@ class MStream:
         self.max_jitter = max_jitter
         self.shortest_routes = list()
         self.seg_streams = list() # Stream
+        self.hyper_period = interval
+        '''
+        {node_id:[[node_id, next,],[]],}
+        '''
+        self.seg_path_dict = dict()
+        '''
+        TODO: hyper...
+        {node_id1:[
+            pre_node_id, 
+            pre_port_id, 
+            [port_id1, win_start, win_len, uni_id], 
+            [port_id2,]
+        ]}
+        '''
+        self.windowsInfo = dict()
 
+    def update_winInfo(self, new_hyper_period):
+        if self.hyper_period >= new_hyper_period:
+            return
+        times = int(new_hyper_period / self.hyper_period)
+        #for k, v in self.windowsInfo.items():
+        #    cpy = copy.deepcopy(v)
+        #    for x in cpy[2:]:
+        #        for i in range(times - 1):
+        #            x[1] += self.hyper_period
+        #            if new_hyper_period >= x[1] + x[2]:
+        #                self.windowsInfo[k].append(x)
+        self.hyper_period = new_hyper_period
+
+    def clean_winInfo(self):
+        self.windowsInfo = dict()

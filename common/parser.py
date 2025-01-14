@@ -1,25 +1,26 @@
 '''
 -*- coding: utf-8 -*-
-@Time    :   2024/3/20 21:07
-@Auther  :   zyh
-@Email   :
+@Time    :   2024/12/21 13:22
+@Author  :   zyh
+@Email   :   
 @Project :   MultiQbvScheduler
 @File    :   parser.py
 '''
+
 import networkx
 import yaml
 import shutil
 import matplotlib.pyplot as plt
-from yaml import CLoader
-from src.mqbv.Topology import *
-from src.mqbv.Stream import *
+from typing import List
+from common.TopologyBase import *
+from common.StreamBase import *
 
 
 def topology_parser(topology_file_path):
-    topology = Topology(0)
+    topology = TopologyBase(0)
     default_proc_delay = 10000
     with open(topology_file_path, "r", encoding="utf-8") as f:
-        topology_info = yaml.load(f, Loader=CLoader)
+        topology_info = yaml.load(f, Loader=yaml.Loader)
         for node_info in topology_info:
             if node_info['end_device'] == 1:
                 topology.end_devices.append(node_info['node_id'])
@@ -46,7 +47,7 @@ def topology_parser(topology_file_path):
 def stream_parser(stream_file_path):
     streams = list()
     with open(stream_file_path, "r", encoding="utf-8") as f:
-        streams_info = yaml.load(f, Loader=CLoader)
+        streams_info = yaml.load(f, Loader=yaml.Loader)
         uni_stream_index = 0
         for stream_info in streams_info:
             for dst_id in stream_info['dst_node_ids']:
@@ -67,7 +68,7 @@ def stream_parser(stream_file_path):
 def mstream_parser(stream_file_path):
     mstreams = list()
     with open(stream_file_path, "r", encoding="utf-8") as f:
-        mstreams_info = yaml.load(f, Loader=CLoader)
+        mstreams_info = yaml.load(f, Loader=yaml.Loader)
         index = 0
         for mstream_info in mstreams_info:
             mstream = MStream(index,
@@ -108,7 +109,7 @@ def sanone_sw_converse_instruction(port_timelines, hyper_period):
                 f.write("write\n")
 
 
-def _sanone_sw_converse_instruction(node_port_info, timeline: list[list[int]], hyper_period, f):
+def _sanone_sw_converse_instruction(node_port_info, timeline: List[List[int]], hyper_period, f):
     # print(f"============== GCL instruction of {node_port_info} ==============")
     last_end_time = 0
     gcl_index = 0
@@ -171,7 +172,7 @@ def _sanone_sw_converse_instruction(node_port_info, timeline: list[list[int]], h
     # print(f"total interval length is {interval_len}ns")
 
 
-def _ls1028_converse_instruction(timeline: list[list[int]], hyper_period, f):
+def _ls1028_converse_instruction(timeline: List[List[int]], hyper_period, f):
     '''
     t0 11111111b 10000
     t1 00000000b 99990000
@@ -209,7 +210,7 @@ def _ls1028_converse_instruction(timeline: list[list[int]], hyper_period, f):
         f.write(gcl_instruction)
 
 
-def _tc_taprio_comverse_instruction(timeline: list[list[int]], hyper_period, f):
+def _tc_taprio_comverse_instruction(timeline: List[List[int]], hyper_period, f):
     last_end_time = 0
     gcl_index = 0
     interval_len = 0
@@ -251,7 +252,7 @@ def _tc_taprio_comverse_instruction(timeline: list[list[int]], hyper_period, f):
         f.write(gcl_instruction)
 
 
-def check_and_draw_topology(topology: Topology):
+def check_and_draw_topology(topology: TopologyBase):
     G = networkx.DiGraph()
     for node in topology.nodes:
         G.add_node(node.id, node_id=node.id)
@@ -265,8 +266,7 @@ def check_and_draw_topology(topology: Topology):
     return G
 
 
-def check_streams(streams: list[Stream]):
+def check_streams(streams: List[Stream]):
     for item in streams:
         print(item.uni_stream_id, item.src_node_id, item.dst_node_id, item.size, item.vlanid, item.interval)
-
 

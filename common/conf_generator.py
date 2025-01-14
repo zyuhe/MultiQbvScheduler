@@ -1,17 +1,17 @@
 '''
 -*- coding: utf-8 -*-
-@Time    :   2024/3/20 21:09
-@Auther  :   zyh
-@Email   :
+@Time    :   2024/12/21 13:22
+@Author  :   zyh
+@Email   :   
 @Project :   MultiQbvScheduler
 @File    :   conf_generator.py
 '''
-import time
 
+import time
 import random
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
-from src.mqbv.parser import *
+from common.parser import *
 
 
 def generate_topology(size, yaml_file_path):
@@ -56,7 +56,7 @@ def generate_topology(size, yaml_file_path):
 '''
 store in yaml file
 '''
-def generate_streams(stream_count, topology: Topology, yaml_file_path):
+def generate_streams(stream_count, topology: TopologyBase, yaml_file_path):
     begin_time = time.time_ns()
     streams_info = list()
     optional_size = [i*100 for i in range(1, 16)]
@@ -102,7 +102,7 @@ def generate_streams(stream_count, topology: Topology, yaml_file_path):
 '''
 return a stream: Stream
 '''
-def gene_a_stream(topology: Topology, uni_id):
+def gene_a_stream(topology: TopologyBase, uni_id):
     # decide sender and receiver
     if len(topology.end_devices) < 2:
         raise ValueError("No enough end devices to choice!")
@@ -142,7 +142,7 @@ def gene_a_stream(topology: Topology, uni_id):
     return Stream(uni_id, size, interval, vlan, pcp, sender, receiver, max_latency, max_jitter)
 
 
-def parse_streams_to_yaml(streams: list[Stream], yaml_file_path):
+def parse_streams_to_yaml(streams: List[Stream], yaml_file_path):
     streams_info = list()
     for stream in streams:
         streams_info.append({
@@ -159,16 +159,16 @@ def parse_streams_to_yaml(streams: list[Stream], yaml_file_path):
         yaml.dump(streams_info, f)
 
 
-def turn_stream_info_to_trdp_config_xml(streams: list[Stream], topology: Topology, mapping_file_path1, mapping_file_path2, output_xml_path_pre):
+def turn_stream_info_to_trdp_config_xml(streams: List[Stream], topology: TopologyBase, mapping_file_path1, mapping_file_path2, output_xml_path_pre):
     # Please input Ipv4 Address of node n:
     # Please input interface name of node n port n:
     # Please input Ipv4 Address of vlan interface ifname.vlan_id:
     # Or parse mapping file
     # TODO: Static Route Configuration
     with open(mapping_file_path2, "r", encoding="utf-8") as f:
-        multicast_mapping_info = yaml.load(f, Loader=CLoader)
+        multicast_mapping_info = yaml.load(f, Loader=yaml.Loader)
     with open(mapping_file_path1, "r", encoding="utf-8") as f:
-        mapping_info = yaml.load(f, Loader=CLoader)
+        mapping_info = yaml.load(f, Loader=yaml.Loader)
         # print(mapping_info)
         streams = [element for sublist in streams for element in sublist]
         sorted_streams_by_src = sorted(streams, key=lambda x: x.src_node_id)
@@ -321,5 +321,4 @@ def turn_stream_info_to_trdp_config_xml(streams: list[Stream], topology: Topolog
             with open(output_file, "w") as fo:
                 fo.write(pretty_xml)
             # tree.write(output_file, encoding="utf-8", xml_declaration=True)
-
 

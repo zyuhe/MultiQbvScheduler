@@ -7,9 +7,10 @@
 @File    :   solver.py
 '''
 import time
-from src.mqbv.parser import *
+from common.parser import *
+from common.funcs import *
 
-def compute_stream_omega(qbv_solver, topology: Topology, streams: list[Stream]):
+def compute_stream_omega(qbv_solver, topology: TopologyBase, streams: List[Stream]):
     print("============== compute mapping relationship ==============")
     node_port_constraint_counter = {}
     for streams_in_m in streams:
@@ -229,7 +230,7 @@ def constrains_solver(qbv_solver):
         None
 
 
-def parse_solution_topo(solution: dict, topology: Topology):
+def parse_solution_topo(solution: dict, topology: TopologyBase):
     print("============== parse ports timeline ==============")
     port_res = dict()
     for node in topology.nodes:
@@ -248,7 +249,7 @@ def parse_solution_topo(solution: dict, topology: Topology):
     return port_res
 
 
-def parse_solution_stream(solution: dict, streams: list[Stream]):
+def parse_solution_stream(solution: dict, streams: List[Stream]):
     print("============== parse stream timeline ==============")
     stream_res = dict()
     for streams_in_m in streams:
@@ -273,7 +274,7 @@ def parse_solution_stream(solution: dict, streams: list[Stream]):
     return stream_res
 
 
-def seg_mstreams(topology: Topology, mstreams: list[MStream]):
+def seg_mstreams(topology: TopologyBase, mstreams: List[MStream]):
     print("============== segmenting multicast traffic ==============")
     hyper_period = compute_hyper_period(mstreams)
     topology_graph = check_and_draw_topology(topology)
@@ -303,6 +304,7 @@ def seg_mstreams(topology: Topology, mstreams: list[MStream]):
             # TODO: select vlan by path
             best_path = select_best_path(topology, available_paths, mstream, hyper_period)
             best_paths.append(best_path)
+        # TODO: turn to compute_seg_path_dict
         seg_paths = seg_by_paths(best_paths)
         # create Stream for segmented stream
         if not isinstance(seg_paths[0], list):
@@ -381,36 +383,6 @@ def select_best_path(topology, available_paths, new_stream, hyper_period):
     return available_paths[sorted_cmp_dict[0][0]]
 
 
-
-def seg_by_paths(paths):
-    if len(paths) == 1:
-        return paths[0]
-    res = list()
-    paths_dict = dict()
-    f = 1
-    while f < len(paths[0]):
-        cmp = paths[0][f]
-        flag = True
-        for path in paths:
-            if path[f] != cmp:
-                flag = False
-                break
-        if flag is True:
-            f += 1
-        else:
-            break
-    res.append(paths[0][:f])
-    for path in paths:
-        if path[f] in paths_dict.keys():
-            paths_dict[path[f]].append(path[f - 1:])
-        else:
-            paths_dict[path[f]] = [path[f - 1:]]
-    for s_paths in paths_dict.values():
-        res_path = seg_by_paths(s_paths)
-        res.append(res_path)
-    return res
-
-
 def compute_hyper_period(streams: list):
     interval_list = list()
     for stream in streams:
@@ -418,7 +390,7 @@ def compute_hyper_period(streams: list):
     return _compute_hyper_period(interval_list)
 
 
-def _compute_hyper_period(interval_list: list[int]):
+def _compute_hyper_period(interval_list: List[int]):
     hyper_period = 1
     for interval in interval_list:
         hyper_period = int(interval) * int(hyper_period) / math.gcd(int(interval), int(hyper_period))

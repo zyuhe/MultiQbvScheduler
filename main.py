@@ -1,11 +1,22 @@
-from src.mqbv.parser import *
-from src.mqbv.solver import *
-from src.mqbv.conf_generator import *
-from src.mqbv.plot import *
+'''
+-*- coding: utf-8 -*-
+@Time    :   2024/12/21 13:25
+@Author  :   zyh
+@Email   :   
+@Project :   MultiQbvScheduler
+@File    :   main.py
+'''
+import numpy as np
 
-def mcompute(topology: Topology, mstreams: list[MStream]):
-    mapping_file_path1 = "src/config/simu_topo2trdp.yaml"
-    mapping_file_path2 = "src/config/simu_multicastId2ip.yaml"
+from src.aco.Aco import Aco
+from src.aco.StreamGraph import StreamGraph
+from src.smt.solver import *
+from common.conf_generator import *
+from common.plot import *
+
+def mcompute(topology: TopologyBase, mstreams: List[MStream]):
+    mapping_file_path1 = "config/simu_topo2trdp.yaml"
+    mapping_file_path2 = "config/simu_multicastId2ip.yaml"
     output_xml_path_pre = "output/traffic_config_tmp_"
     qbv_solver = Solver()
     streams, res = seg_mstreams(topology, mstreams)
@@ -23,19 +34,36 @@ def mcompute(topology: Topology, mstreams: list[MStream]):
         sanone_sw_converse_instruction(port_timelines, hyper_period)
         turn_stream_info_to_trdp_config_xml(streams, topology, mapping_file_path1, mapping_file_path2, output_xml_path_pre)
 
+def plot_latency_over_iterations(best_latency_history):
+    plt.plot(best_latency_history, color='green', linewidth=2)
+    plt.title("Trip Latency Over Iterations")
+    plt.xlabel("Iteration")
+    plt.ylabel("Latency")
+    plt.show()
+
+def aco_solve(topology, mstreams):
+    distances = np.ones((len(mstreams), len(mstreams)))
+    np.fill_diagonal(distances, 0)
+    streamGraph = StreamGraph(mstreams, distances)
+    aco = Aco(streamGraph, topology, num_ants=10,num_iterations=20)
+    best_path, best_bandwidth = aco.run()
+    # print(aco.streamGraph.pheromones)
+    print("best latency history：", aco.best_latency_history)
+    # print("best path history：", aco.best_path_latency_history)
+    print(best_path)
+    plot_latency_over_iterations(aco.best_latency_history)
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    topology_path = "src/config/topology_config.yaml"
-    streams_path = "src/config/stream_config.yaml"
-    mapping_file_path = "src/config/simu_topo2trdp.yaml"
+    topology_path = "config/topology_config.yaml"
+    streams_path = "config/stream_config2.yaml"
+    mapping_file_path = "config/simu_topo2trdp.yaml"
 
     topology = topology_parser(topology_path)
     mstreams = mstream_parser(streams_path)
 
     # compute(topo, streams)
-    mcompute(topology, mstreams)
+    # mcompute(topology, mstreams)
 
-
-
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
+    # aco
+    aco_solve(topology, mstreams)
