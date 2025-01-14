@@ -43,11 +43,15 @@ def plot_latency_over_iterations(best_latency_history):
 
 def aco_solve(topology, mstreams):
     distances = np.ones((len(mstreams), len(mstreams)))
+    for dis in distances:
+        for d in range(len(dis)):
+            dis[d] = 100000 / mstreams[d].size
+    # print(distances)
     np.fill_diagonal(distances, 0)
     streamGraph = StreamGraph(mstreams, distances)
-    aco = Aco(streamGraph, topology, num_ants=10,num_iterations=20)
+    aco = Aco(streamGraph, topology, num_ants=10,num_iterations=70)
     best_path, best_bandwidth = aco.run()
-    # print(aco.streamGraph.pheromones)
+    print(aco.streamGraph.pheromones)
     print("best latency history：", aco.best_latency_history)
     # print("best path history：", aco.best_path_latency_history)
     print(best_path)

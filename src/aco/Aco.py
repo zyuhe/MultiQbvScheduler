@@ -31,7 +31,7 @@ class Aco(object):
                 if (ant.total_latency == 0):
                     print("error get ant's total latency")
                 self.streamGraph.pheromones[pre_stream][next_stream] += (
-                        self.alpha / ((ant.total_latency - 4000000) / 1000))
+                        self.alpha / ((ant.total_latency) / 1000 / self.streamGraph.num_streams))
         # print(self.streamGraph.pheromones)
 
     def update_stream_and_topology_winInfo(self):
@@ -40,10 +40,10 @@ class Aco(object):
 
     def run(self):
         best_path = None
-        best_latency = np.inf
+        # best_latency = np.inf
         print("num iterations: ", self.num_iterations, "num ants: ", self.num_ants)
         for i in range(self.num_iterations):
-            # best_latency = np.inf
+            best_latency = np.inf
             print("iteration {} ".format(i))
             ants = [Ant(self.streamGraph, self.topology) for _ in range(self.num_ants)]
             for ant in ants:
