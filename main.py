@@ -10,6 +10,7 @@ import numpy as np
 
 from src.aco.Aco import Aco
 from src.aco.StreamGraph import StreamGraph
+from src.ga.ga import GA
 from src.smt.solver import *
 from common.conf_generator import *
 from common.plot import *
@@ -57,6 +58,13 @@ def aco_solve(topology, mstreams):
     print(best_path)
     plot_latency_over_iterations(aco.best_latency_history)
 
+def ga_solve(topology, mstreams):
+    ga = GA(topology, mstreams)
+    ga.run()
+    print(ga.best_latency_history)
+    print(ga.best_path)
+    plot_latency_over_iterations(ga.best_latency_history)
+
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
     topology_path = "config/topology_config.yaml"
@@ -70,4 +78,7 @@ if __name__ == '__main__':
     # mcompute(topology, mstreams)
 
     # aco
-    aco_solve(topology, mstreams)
+    # aco_solve(topology, mstreams)
+
+    # ga
+    ga_solve(topology, mstreams)
