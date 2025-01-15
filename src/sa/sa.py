@@ -90,10 +90,11 @@ class SA(object):
             # 2. update gcl and compute latency
             update_node_neigh_info(self.topology, mstream)
             # result = self.update_node_win_info(mstream)
-            self.total_latency = update_node_win_info(self.topology, mstream, self.win_plus, self.total_latency) # update self.total_latency
-            if self.total_latency < 0:
+            add_latency = update_node_win_info(self.topology, mstream, self.win_plus) # update self.total_latency
+            if add_latency < 0:
                 print("error update qbv")
                 return -1
+            self.total_latency += add_latency
         total_latency = self.total_latency
         self.total_latency = 0
         self.update_stream_and_topology_winInfo()

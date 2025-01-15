@@ -45,17 +45,6 @@ class Ant(object):
             next_stream_id = np.random.randint(self.streamGraph.num_streams)
         return next_stream_id
 
-    # def update_node_neigh_info(self, mstream: MStream):
-    #     # print("mstream.seg_path_dict", mstream.seg_path_dict)
-    #     value_list = list(mstream.seg_path_dict.values())
-    #     mstream.windowsInfo[value_list[0][0][0]] = [-1, -1]
-    #     for v in value_list:
-    #         for seg in v:
-    #             for i in range(len(seg) - 1):
-    #                 pre_node_id = seg[i]
-    #                 pre_port = self.topology.get_node(pre_node_id).get_port_by_neighbor_id(seg[i+1])
-    #                 mstream.windowsInfo[seg[i+1]] = [pre_node_id, pre_port.id]
-
     def update_qbv(self):
         next_stream_id = self.select_next_stream_id()
         next_stream = self.streamGraph.mstreams[next_stream_id]
@@ -92,11 +81,11 @@ class Ant(object):
         update_node_neigh_info(self.topology, next_stream)
         # print("next stream", next_stream.id, "interval", next_stream.interval, "windowsInfo", next_stream.windowsInfo)
         # print("seg_paths", next_stream.seg_path_dict)
-        self.total_latency = update_node_win_info(self.topology, next_stream, self.win_plus, self.total_latency)
-        if self.total_latency < 0:
+        add_latency = update_node_win_info(self.topology, next_stream, self.win_plus)
+        if add_latency < 0:
             print("error update qbv")
             return False
-
+        self.total_latency += add_latency
         self.current_stream_id = next_stream_id
         self.unvisited_streams.remove(next_stream_id)
         return True

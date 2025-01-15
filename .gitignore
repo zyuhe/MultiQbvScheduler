@@ -1,3 +1,4 @@
 output/
 savefig/
 **/__pycache__
+**/ref/

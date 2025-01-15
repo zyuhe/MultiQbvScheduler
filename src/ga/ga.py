@@ -39,17 +39,6 @@ class GA(object):
         self.best_latency_history = []
         self.best_path = []
 
-    def update_node_neigh_info(self, mstream: MStream):
-        # print("mstream.seg_path_dict", mstream.seg_path_dict)
-        value_list = list(mstream.seg_path_dict.values())
-        mstream.windowsInfo[value_list[0][0][0]] = [-1, -1]
-        for v in value_list:
-            for seg in v:
-                for i in range(len(seg) - 1):
-                    pre_node_id = seg[i]
-                    pre_port = self.topology.get_node(pre_node_id).get_port_by_neighbor_id(seg[i + 1])
-                    mstream.windowsInfo[seg[i + 1]] = [pre_node_id, pre_port.id]
-
     def update_stream_and_topology_winInfo(self):
         for mstream in self.mstreams:
             mstream.clean_winInfo()
@@ -87,16 +76,14 @@ class GA(object):
 
             # 2. update gcl and compute latency
             update_node_neigh_info(self.topology, mstream)
-            # result = self.update_node_win_info(mstream)
-            self.total_latency = update_node_win_info(self.topology, mstream, self.win_plus, self.total_latency) # update self.total_latency
-            if self.total_latency < 0:
+            add_latency = update_node_win_info(self.topology, mstream, self.win_plus) # update self.total_latency
+            if add_latency < 0:
                 print("error update qbv")
                 return -1
+            self.total_latency += add_latency
         total_latency = self.total_latency
         self.total_latency = 0
-
         self.update_stream_and_topology_winInfo()
-
         return total_latency
 
     def tournament_select(self, pops, popsize, fits, tournament_size):

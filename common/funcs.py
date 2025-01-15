@@ -9,9 +9,11 @@
 
 import math
 import numpy as np
+import networkx
 
 from common.StreamBase import MStream
 from common.TopologyBase import TopologyBase
+from common.parser import check_and_draw_topology
 
 '''
 input:[list(path1), list(path2),]
@@ -88,7 +90,18 @@ def update_node_neigh_info(topology: TopologyBase, mstream: MStream):
                 pre_port = topology.get_node(pre_node_id).get_port_by_neighbor_id(seg[i + 1])
                 mstream.windowsInfo[seg[i + 1]] = [pre_node_id, pre_port.id]
 
-def update_node_win_info(topology: TopologyBase, mstream: MStream, win_plus, total_latency):
+def calc_ideal_add_latency(topology: TopologyBase, mstream: MStream, win_plus):
+    ideal_add_latency = 0
+    for v in mstream.seg_path_dict.values():
+        for seg in v:
+            for i in range(len(seg) - 1):
+                node = topology.get_node(seg[i])
+                port = node.get_port_by_neighbor_id(seg[i + 1])
+                win_len = math.ceil(mstream.size * 8 * 1000 / port.port_speed + win_plus)
+                ideal_add_latency += win_len
+    return round(ideal_add_latency / len(mstream.dst_node_ids), 2)
+
+def update_node_win_info(topology: TopologyBase, mstream: MStream, win_plus):
     # for segs from a node
     uni_id = -1
     delay_start = []
@@ -218,8 +231,47 @@ def update_node_win_info(topology: TopologyBase, mstream: MStream, win_plus, tot
                 # print("=============")
     # compute delay
     add_latency = sum(delays) / (len(delays) / len(mstream.dst_node_ids))
-    total_latency += add_latency
     # print("mstream：", mstream.id, "src：", mstream.src_node_id, "dst：", mstream.multicast_id, "delay result：")
-    # print("delays：", delays, "dst num", len(mstream.dst_node_ids), "hyper times", (len(delays) / len(mstream.dst_node_ids)), "now total latency：", total_latency)
-    return total_latency
+    # print("delays：", delays, "dst num", len(mstream.dst_node_ids),
+    # "hyper times", (len(delays) / len(mstream.dst_node_ids)), "add latency：", add_latency)
+    return add_latency
+
+def calc_total_latency(topology, mstreams, mstream_order):
+    total_latency = 0
+    topology_graph = check_and_draw_topology(topology)
+    for mstream_id in mstream_order:
+        mstream = mstreams[mstream_id]
+        # 1. calc route
+        best_paths = list()
+        for dst_node_id in mstream.dst_node_ids:
+            paths = list(
+                networkx.all_simple_paths(topology_graph, source=mstream.src_node_id, target=dst_node_id))
+            paths = sorted(paths, key=len)
+            available_paths = paths.copy()
+            for path in paths:
+                for index in range(len(path) - 1):
+                    if index != 0 and topology.get_node(path[index]).end_device == 1:
+                        available_paths.remove(path)
+                        break
+                    if mstream.vlan_id not in topology.get_node(path[index]).get_port_by_neighbor_id(
+                            path[index + 1]
+                    ).allowed_vlans:
+                        available_paths.remove(path)
+                        break
+            if len(available_paths) == 0:
+                print(f"==>WARNING: no viable path from {mstream.src_node_id} to {dst_node_id}!")
+                print("             Please check stream and topology settings.")
+                # TODO: error re_choose route
+            # TODO: route select algorithm
+            best_path = available_paths[0]
+            best_paths.append(best_path)
+        mstream.seg_path_dict = compute_seg_path_dict(best_paths)
+        # 2. update gcl and compute latency
+        update_node_neigh_info(topology, mstream)
+        add_latency = update_node_win_info(topology, mstream, 1000)  # update self.total_latency
+        if add_latency < 0:
+            print("error update qbv")
+            return -1
+        total_latency += add_latency
+    print(total_latency)
 

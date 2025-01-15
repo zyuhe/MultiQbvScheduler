@@ -78,8 +78,13 @@ def sa_solve(topology, mstreams):
     print("best path", sa.best_path)
     plot_latency_over_iterations(sa.best_latency_history)
 
-def pso_solve(topology, mstreams):
-
+def qlearning_solve(topology, mstreams):
+    from src.qlearning.qlearning import QLearning
+    # 4305600
+    ql = QLearning(topology, mstreams, alpha=0.01, gamma=0.8, epsilon=0.5, final_epsilon=0.05)
+    ql.Train_Qtable(iter_num=2000)
+    # 保存Q表
+    ql.Write_Qtable()
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
@@ -102,5 +107,7 @@ if __name__ == '__main__':
     # sa 模拟退火 No.1
     # sa_solve(topology, mstreams)
 
-    # pso 粒子群算法
-    pso_solve(topology, mstreams)
+    # q-learning
+    qlearning_solve(topology, mstreams)
+
+    # calc_total_latency(topology, mstreams, [1, 3, 10, 4, 9, 11, 7, 8, 5, 14, 13, 12, 2, 6, 15, 0])
