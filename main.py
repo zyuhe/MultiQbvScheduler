@@ -8,9 +8,6 @@
 '''
 import numpy as np
 
-from src.aco.Aco import Aco
-from src.aco.StreamGraph import StreamGraph
-from src.ga.ga import GA
 from src.smt.solver import *
 from common.conf_generator import *
 from common.plot import *
@@ -43,6 +40,9 @@ def plot_latency_over_iterations(best_latency_history):
     plt.show()
 
 def aco_solve(topology, mstreams):
+    from src.aco.Aco import Aco
+    from src.aco.StreamGraph import StreamGraph
+
     distances = np.ones((len(mstreams), len(mstreams)))
     for dis in distances:
         for d in range(len(dis)):
@@ -59,11 +59,27 @@ def aco_solve(topology, mstreams):
     plot_latency_over_iterations(aco.best_latency_history)
 
 def ga_solve(topology, mstreams):
+    from src.ga.ga import GA
+
     ga = GA(topology, mstreams)
     ga.run()
     print(ga.best_latency_history)
-    print(ga.best_path)
+    print("best latency", ga.best_latency_history[len(ga.best_latency_history)-1])
+    print("best path", ga.best_path)
     plot_latency_over_iterations(ga.best_latency_history)
+
+def sa_solve(topology, mstreams):
+    from src.sa.sa import SA
+
+    sa = SA(topology, mstreams)
+    sa.run()
+    # print(sa.best_latency_history)
+    print("best latency", sa.best_latency)
+    print("best path", sa.best_path)
+    plot_latency_over_iterations(sa.best_latency_history)
+
+def pso_solve(topology, mstreams):
+
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
@@ -74,11 +90,17 @@ if __name__ == '__main__':
     topology = topology_parser(topology_path)
     mstreams = mstream_parser(streams_path)
 
-    # compute(topo, streams)
+    # compute(topo, streams) smt
     # mcompute(topology, mstreams)
 
-    # aco
+    # aco 蚁群算法 No.3
     # aco_solve(topology, mstreams)
 
-    # ga
-    ga_solve(topology, mstreams)
+    # ga 遗传算法 No.2
+    # ga_solve(topology, mstreams)
+
+    # sa 模拟退火 No.1
+    # sa_solve(topology, mstreams)
+
+    # pso 粒子群算法
+    pso_solve(topology, mstreams)

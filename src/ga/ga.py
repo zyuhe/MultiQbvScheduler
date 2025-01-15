@@ -29,7 +29,7 @@ class GA(object):
         self.win_plus = 1000 # ns
         self.CityNum = 20 # stream number
         # GA parameters
-        self.generation = 100 # 迭代次数
+        self.generation = 150 # 迭代次数
         self.popsize = 100 # 种群大小
         self.tournament_size = 5 # 锦标赛小组大小
         self.pc = 0.95 # 交叉概率
@@ -49,141 +49,6 @@ class GA(object):
                     pre_node_id = seg[i]
                     pre_port = self.topology.get_node(pre_node_id).get_port_by_neighbor_id(seg[i + 1])
                     mstream.windowsInfo[seg[i + 1]] = [pre_node_id, pre_port.id]
-
-    def update_node_win_info(self, mstream: MStream):
-        # for segs from a node
-        uni_id = -1
-        delay_start = []
-        delays = []
-        seg_num = 0
-        for v in mstream.seg_path_dict.values():
-            seg_num += len(v)
-        # print("mstream：", mstream.id, "has", seg_num, "segs")
-        for v in mstream.seg_path_dict.values():
-            # a seg of segs
-            for seg in v:
-                uni_id += 1
-                # node with gcl except for last of this seg
-                for i in range(len(seg) - 1):
-                    last_hop = False
-                    if i == len(seg) - 2:
-                        tnode = self.topology.get_node(seg[i + 1])
-                        if tnode.end_device == 1:
-                            last_hop = True
-                    node = self.topology.get_node(seg[i])
-                    port = node.get_port_by_neighbor_id(seg[i+1])
-                    port.expand_hyper_period(mstream.hyper_period)
-                    # if port.hyper_period > mstream.hyper_period:
-                    #     print(" == old stream hp：", mstream.hyper_period, "new hp：", port.hyper_period)
-                    mstream.update_winInfo(port.hyper_period)
-                    new_hyper = port.hyper_period
-                    if mstream.hyper_period > new_hyper:
-                        new_hyper = mstream.hyper_period
-                    times = int(new_hyper / mstream.interval)
-                    # print("mstream", mstream.id, "interval", mstream.interval, "ms hyper", mstream.hyper_period, "phyper", port.hyper_period, "times", times)
-                    # print("node", seg[i], ", port", port.id, ", hyper_period", port.hyper_period, "ns, winInfo", port.windowsInfo)
-                    # if mstream.windowsInfo[seg[i]][0] ！= -1: # source_device
-                    # insert gate into port.windowsInfo
-                    # find earliest ts, get win_len
-                    win_len = math.ceil(mstream.size * 8 * 1000 / port.port_speed + self.win_plus)
-                    # print("mstream.size", mstream.size, "bytes, port.speed", port.port_speed, "Mbps, window length", win_len, "us")
-                    for ti in range(times):
-                        # print("ti =", ti)
-                        # get pre node's gate close time as temp ts open
-                        tmp_ts_open = ti * mstream.interval
-                        first_node = True
-                        # print(mstream.windowsInfo, seg[i])
-                        if mstream.windowsInfo[seg[i]][0] >= 0:
-                            pre_node = self.topology.get_node(mstream.windowsInfo[seg[i]][0])
-                            pre_port = pre_node.get_port(mstream.windowsInfo[seg[i]][1])
-                            # print("get pre node", pre_node.id, "get pre port", pre_port.id)
-                            first_node = False
-                            get_pre_ts = False
-                            for winInfo in pre_port.windowsInfo:
-                                if pre_port.hyper_period >= port.hyper_period:
-                                    if winInfo[pre_port.MSTREAM_ID] == mstream.id and ti * mstream.interval <= winInfo[pre_port.TS_OPEN] and \
-                                            winInfo[pre_port.TS_OPEN] + winInfo[pre_port.WIN_LEN] < (ti+1) * mstream.interval:
-                                        tmp_ts_open = round(winInfo[pre_port.TS_OPEN] + winInfo[pre_port.WIN_LEN], 1)
-                                        get_pre_ts = True
-                                        # print("1from pre node port get tmp ts open：", tmp_ts_open)
-                                        break
-                                else:
-                                    if winInfo[pre_port.MSTREAM_ID] == mstream.id:
-                                        tmp_pre_ts_open = winInfo[pre_port.TS_OPEN] + ti / (pre_port.hyper_period / mstream.interval) * pre_port.hyper_period
-                                        if ti * mstream.interval <= tmp_pre_ts_open <= (ti+1) * mstream.interval - winInfo[pre_port.WIN_LEN]:
-                                            tmp_ts_open = round(tmp_pre_ts_open + winInfo[pre_port.WIN_LEN], 1)
-                                            get_pre_ts = True
-                                            # print("2from pre node port get tmp ts open：", tmp_ts_open)
-                                            break
-                                #else:
-                                #    print("error find mstream win info of previous port")
-                                #    print(ti * mstream.interval, winInfo[pre_port.TS_OPEN], winInfo[pre_port.WIN_LEN], (ti+1) * mstream.interval)
-                            if not get_pre_ts:
-                                print("error get previous gcl info, ti", ti, "mstream interval", mstream.interval, "hyper", mstream.hyper_period)
-                                print("pre port info", pre_port.windowsInfo, "hyper", pre_port.hyper_period)
-                                print("now port hyper", port.hyper_period)
-                                return False
-                        right_limit = (ti+1) * mstream.interval
-                        insert_ok = False
-                        for win_index in range(len(port.windowsInfo)):
-                            cmp_close = port.windowsInfo[win_index][port.TS_OPEN] + port.windowsInfo[win_index][port.WIN_LEN]
-                            if right_limit >= port.windowsInfo[win_index][port.TS_OPEN] >= tmp_ts_open + win_len:
-                                # insert and update win info of topology and mstream
-                                if not first_node:
-                                    port.windowsInfo.append([
-                                        tmp_ts_open, win_len, mstream.id, mstream.pcp, pre_node.id, pre_port.id])
-                                else:
-                                    port.windowsInfo.append([
-                                        tmp_ts_open, win_len, mstream.id, mstream.pcp, -1, -1])
-                                port.update_windows_info()
-                                mstream.windowsInfo[seg[i]].append([
-                                    port.id, tmp_ts_open, win_len, uni_id + ti * seg_num])
-                                # print("update port info1")
-                                #print(port.windowsInfo)
-                                #print(mstream.windowsInfo)
-                                insert_ok = True
-                                break
-                            elif cmp_close >= right_limit:
-                                pass
-                                # print("！！！error find mstream win info of this port, cmp close：", cmp_close, "tmp ts open", tmp_ts_open, "right limit：", right_limit)
-                            elif tmp_ts_open < cmp_close:
-                                tmp_ts_open = port.windowsInfo[win_index][port.TS_OPEN] + port.windowsInfo[win_index][port.WIN_LEN]
-                                # print("update tmp ts open：", tmp_ts_open, "from port wininfo", port.windowsInfo)
-                        if not insert_ok and right_limit >= tmp_ts_open + win_len:
-                            # insert and update win info of topology and mstream
-                            if not first_node:
-                                port.windowsInfo.append([
-                                    tmp_ts_open, win_len, mstream.id, mstream.pcp, pre_node.id, pre_port.id])
-                            else:
-                                port.windowsInfo.append([
-                                    tmp_ts_open, win_len, mstream.id, mstream.pcp, -1, -1])
-                            port.update_windows_info()
-                            mstream.windowsInfo[seg[i]].append([
-                                port.id, tmp_ts_open, win_len, uni_id + ti * seg_num])
-                            insert_ok = True
-                            # print("update port info2")
-                            #print(port.windowsInfo)
-                            #print(mstream.windowsInfo)
-                        if first_node:
-                            # print("got first node：", node.id, "delay start：", tmp_ts_open)
-                            delay_start.append(tmp_ts_open)
-                        if not first_node and last_hop:
-                            # print("got last node：", node.id, "end at：", tmp_ts_open + win_len)
-                            if len(delay_start) > ti:
-                                d = round(tmp_ts_open + win_len - delay_start[ti], 1)
-                            else:
-                                d = round(tmp_ts_open + win_len - delay_start[ti % len(delay_start)] - mstream.interval * (ti / len(delay_start)), 1)
-                            delays.append(d)
-                        if not insert_ok:
-                            print("error insert_ok")
-                            return False
-                    # print("=============")
-        # compute delay
-        add_latency = sum(delays) / (len(delays) / len(mstream.dst_node_ids))
-        self.total_latency += add_latency
-        # print("mstream：", mstream.id, "src：", mstream.src_node_id, "dst：", mstream.multicast_id, "delay result：")
-        # print("delays：", delays, "dst num", len(mstream.dst_node_ids), "hyper times", (len(delays) / len(mstream.dst_node_ids)), "now total latency：", self.total_latency)
-        return True
 
     def update_stream_and_topology_winInfo(self):
         for mstream in self.mstreams:
@@ -221,9 +86,10 @@ class GA(object):
             mstream.seg_path_dict = compute_seg_path_dict(best_paths)
 
             # 2. update gcl and compute latency
-            self.update_node_neigh_info(mstream)
-            result = self.update_node_win_info(mstream) # update self.total_latency
-            if not result:
+            update_node_neigh_info(self.topology, mstream)
+            # result = self.update_node_win_info(mstream)
+            self.total_latency = update_node_win_info(self.topology, mstream, self.win_plus, self.total_latency) # update self.total_latency
+            if self.total_latency < 0:
                 print("error update qbv")
                 return -1
         total_latency = self.total_latency
@@ -292,7 +158,6 @@ class GA(object):
                 pops_mutate.append(pop)
                 count += 1
         return pops_mutate
-
 
     def run(self):
         iteration = 0
