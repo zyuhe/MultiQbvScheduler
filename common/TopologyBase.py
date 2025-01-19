@@ -80,6 +80,19 @@ class Port:
     def clear_windows_info(self):
         self.windowsInfo = []
 
+    def remaining_resorce(self):
+        pre_t = 0
+        rr = 0
+        min_slot = 800 / self.port_speed + 1
+        for wf in self.windowsInfo:
+            # 門控間隙能容納100bytes的數據包通過
+            if wf[0] - pre_t > min_slot:
+                rr += wf[0] - pre_t
+            pre_t = wf[0] + wf[1]
+        if self.hyper_period - pre_t > min_slot:
+            rr += self.hyper_period - pre_t
+        return round(rr / self.hyper_period, 3)
+
 class Link:
     '''
     length : unit m

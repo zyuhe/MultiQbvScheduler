@@ -14,6 +14,7 @@ import networkx
 from common.StreamBase import MStream
 from common.TopologyBase import TopologyBase
 from common.parser import check_and_draw_topology
+from common.plot import draw_gantt_chart
 
 '''
 input:[list(path1), list(path2),]
@@ -200,6 +201,9 @@ def update_node_win_info(topology: TopologyBase, mstream: MStream, win_plus):
                         elif tmp_ts_open < cmp_close:
                             tmp_ts_open = port.windowsInfo[win_index][port.TS_OPEN] + port.windowsInfo[win_index][port.WIN_LEN]
                             # print("update tmp ts open：", tmp_ts_open, "from port wininfo", port.windowsInfo)
+                        elif cmp_close <= tmp_ts_open:
+                            # TODO:over cycle schedule
+                            continue
                     if not insert_ok and right_limit >= tmp_ts_open + win_len:
                         # insert and update win info of topology and mstream
                         if not first_node:
@@ -215,6 +219,9 @@ def update_node_win_info(topology: TopologyBase, mstream: MStream, win_plus):
                         # print("update port info2")
                         #print(port.windowsInfo)
                         #print(mstream.windowsInfo)
+                    if not insert_ok:
+                        print("error insert_ok")
+                        return -1
                     if first_node:
                         # print("got first node：", node.id, "delay start：", tmp_ts_open)
                         delay_start.append(tmp_ts_open)
@@ -225,9 +232,6 @@ def update_node_win_info(topology: TopologyBase, mstream: MStream, win_plus):
                         else:
                             d = round(tmp_ts_open + win_len - delay_start[ti % len(delay_start)] - mstream.interval * (ti / len(delay_start)), 1)
                         delays.append(d)
-                    if not insert_ok:
-                        print("error insert_ok")
-                        return -1
                 # print("=============")
     # compute delay
     add_latency = sum(delays) / (len(delays) / len(mstream.dst_node_ids))
@@ -274,4 +278,16 @@ def calc_total_latency(topology, mstreams, mstream_order):
             return -1
         total_latency += add_latency
     print(total_latency)
+    draw_chart(mstreams)
+
+def draw_chart(mstreams):
+    # stream timeline
+    for mstream in mstreams:
+        name = f'mstream_{mstream.id}_src_{mstream.src_node_id}_dst_{mstream.multicast_id}_pcp_{mstream.pcp}'
+        mstream_timeline = []
+        print(name, mstream.windowsInfo)
+        for k, v in mstream.windowsInfo.items():
+            for info in v[2:]:
+                mstream_timeline.append([info[1], round(info[1] + info[2], 1), k, 0, info[3]])
+        draw_gantt_chart(name, mstream_timeline, mstream.hyper_period)
 

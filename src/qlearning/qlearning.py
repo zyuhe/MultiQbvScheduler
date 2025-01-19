@@ -17,8 +17,6 @@ import networkx
 import time
 from typing import List
 
-from fontTools.varLib.mutator import percents
-
 from common.StreamBase import MStream
 from common.TopologyBase import TopologyBase
 from common.funcs import *
