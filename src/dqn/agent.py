@@ -106,17 +106,17 @@ class DQN:
         self.good = {'path': [0], 'distance': 0, 'episode': 0}
         self.bad = {'path': [0], 'distance': 0, 'episode': 0}
 
-    def Choose_action(self, mstream_order, epsilon):
+    # TODO: wrong solution, BaseNet input and output?
+    def Choose_action(self, mstream_order, state, epsilon):
         available_actions = [x for x in self.actions if x not in mstream_order]
-        if len(mstream_order) == 0 or np.random.rand() <= epsilon:
+        if np.random.rand() <= epsilon:
             action = np.random.choice(available_actions)
         else:
             with torch.no_grad():
-                state_tensor = torch.FloatTensor([1 if i in mstream_order else 0 for i in range(len(self.mstreams))])
-                q_values = self.q_network(state_tensor)
-                q_values = torch.stack([q_values[i] for i in available_actions])
-                action_index = q_values.max(0)[1].item()
-                action = available_actions[action_index]
+                q_values = self.q_network(state)
+                # q_values = torch.stack([q_values[i] for i in available_actions])
+                # action_index = q_values.max(0)[1].item()
+                #action = available_actions[action_index]
         return action
 
     def update_stream_and_topology_winInfo(self):
@@ -161,13 +161,14 @@ class DQN:
         return add_latency, ideal_add_latency
 
     # TODO:
-    def Transform(self, state, action):
+    def Transform(self, state, action, ok_num):
         mstream = self.mstreams[action]
         add_latency, ideal_add_latency = self.update_mstream_gcl(mstream)
-        if add_latency < 0:
-            return -1, -1, -1
-        # TODO：update reward
-        reward = -1 * round(add_latency / ideal_add_latency, 2) * mstream.size
+        if add_latency <= 0:
+            reward = -10000 # ???
+        else:
+            # TODO：update reward
+            reward = -1 * round(add_latency / ideal_add_latency, 2) * mstream.size
         # compute new state
         next_state = state.clone()
         for node in self.topology.nodes:
@@ -175,9 +176,8 @@ class DQN:
                 # update state[node.id][nei_id]
                 port = node.get_port_by_neighbor_id(nei_id)
                 next_state[node.id][nei_id] = port.remaining_resorce()
-        # TODO:update long term reward
-        self.replay_buffer.push(state, action, reward, 0, next_state)
-        return next_state, add_latency, reward
+        done = True if ok_num == len(self.mstreams) - 1 else False
+        return next_state, add_latency, reward, done
 
     # TODO:wrong
     def Train_Qtable(self, iter_num=1000, target_update=10):
@@ -197,26 +197,29 @@ class DQN:
             round_reward = 0
             # 小循环-走一轮
             while flag_done == False:  # 没完成
-                action = self.Choose_action(mstream_order, self.epsilon)
-                next_state, add_latency, reward = self.Transform(state, action)
-                if next_state == -1:
-                    pass # 調度失敗
-                round_reward += reward
-                round_total_latency += add_latency
-                mstream_order.append(action)
-                if len(mstream_order) == len(self.mstreams):
-                    flag_done = True
-                if len(self.replay_buffer) >= self.batch_size:
-                    states, actions, rewards, long_term_reward, next_states = self.replay_buffer.sample(self.batch_size)
-                    q_values = self.q_network(states)
-                    next_q_values = self.target_network(next_states)
-                    # TODO:dim=1 ??? gather 1????
-                    q_targets = rewards + self.gamma * torch.max(next_q_values, dim=1)[0]
-                    q_targets = q_targets.detach()
-                    loss = F.mse_loss(q_values.gather(1, actions.unsqueeze(1)), q_targets.unsqueeze(1))
-                    self.optimizer.zero_grad()
-                    loss.backward()
-                    self.optimizer.step()
+                action = self.Choose_action(mstream_order, state, self.epsilon)
+                next_state, add_latency, reward, flag_done = self.Transform(state, action, len(mstream_order))
+                if add_latency == -1:
+                    self.replay_buffer.push(state, action, reward, -np.inf, next_state)
+                else:
+                    round_reward += reward
+                    round_total_latency += add_latency
+                    if flag_done:
+                        self.replay_buffer.push(state, action, reward, -round_total_latency / 1000, next_state)
+                    else:
+                        self.replay_buffer.push(state, action, reward, -np.inf, next_state)
+                    mstream_order.append(action)
+                    if len(self.replay_buffer) >= self.batch_size:
+                        states, actions, rewards, long_term_reward, next_states = self.replay_buffer.sample(self.batch_size)
+                        q_values = self.q_network(states)
+                        next_q_values = self.target_network(next_states)
+                        # TODO:dim=1 ??? gather 1????
+                        q_targets = rewards + self.gamma * torch.max(next_q_values, dim=1)[0]
+                        q_targets = q_targets.detach()
+                        loss = F.mse_loss(q_values.gather(1, actions.unsqueeze(1)), q_targets.unsqueeze(1))
+                        self.optimizer.zero_grad()
+                        loss.backward()
+                        self.optimizer.step()
                 # 衰减
                 if self.epsilon > self.final_epsilon:
                     self.epsilon *= 0.997

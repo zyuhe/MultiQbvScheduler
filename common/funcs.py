@@ -175,6 +175,7 @@ def update_node_win_info(topology: TopologyBase, mstream: MStream, win_plus):
                             print("pre port info", pre_port.windowsInfo, "hyper", pre_port.hyper_period)
                             print("now port hyper", port.hyper_period)
                             return -1
+                    # TODO: to allow cross cycle transmission, redefine right_limit
                     right_limit = (ti+1) * mstream.interval
                     insert_ok = False
                     for win_index in range(len(port.windowsInfo)):
