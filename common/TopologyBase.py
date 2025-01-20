@@ -6,6 +6,7 @@
 @Project :   MultiQbvScheduler
 @File    :   TopologyBase.py
 '''
+import copy
 import math
 
 from z3 import *
@@ -29,8 +30,8 @@ class Port:
         '''
         alpha_set omega_set unit: ns
         '''
-        self.alpha_set = Array(f'node_{self.node_id}_port_{self.id}_alpha', IntSort(), IntSort())
-        self.omega_set = Array(f'node_{self.node_id}_port_{self.id}_omega', IntSort(), IntSort())
+        # self.alpha_set = Array(f'node_{self.node_id}_port_{self.id}_alpha', IntSort(), IntSort())
+        # self.omega_set = Array(f'node_{self.node_id}_port_{self.id}_omega', IntSort(), IntSort())
         self.window2last_hop_constraint_info = []
         self.window2queue_set = []
         '''

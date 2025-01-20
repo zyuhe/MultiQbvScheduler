@@ -34,6 +34,7 @@ def topology_parser(topology_file_path):
                 port.set_neighbor_node_id(port_info['neighbor_node'])
                 port.set_neighbor_port_id(port_info['neighbor_port'])
                 node.add_port(port)
+                node.add_neighbor_node_id(port_info['neighbor_node'])
                 link = Link(node_info['node_id'],
                             port_info['port_id'],
                             port_info['neighbor_node'],

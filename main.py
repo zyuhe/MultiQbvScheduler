@@ -86,6 +86,13 @@ def qlearning_solve(topology, mstreams):
     # 保存Q表
     ql.Write_Qtable()
 
+def dqn_solve(topology, mstreams):
+    from src.dqn.agent import DQN
+    # 4305600
+    dqn = DQN(topology, mstreams)
+    dqn.Train_Qtable(iter_num=2000)
+    plot_latency_over_iterations(dqn.best_latency_history)
+
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
     topology_path = "config/topology_config.yaml"
@@ -104,10 +111,13 @@ if __name__ == '__main__':
     # ga 遗传算法 No.2
     # ga_solve(topology, mstreams)
 
-    # sa 模拟退火 No.1
+    # sa 模拟退火 No.1 [3, 9, 4, 10, 7, 11, 8, 5, 12, 13, 14, 1, 0, 15, 6, 2]
     # sa_solve(topology, mstreams)
 
     # q-learning
-    qlearning_solve(topology, mstreams)
+    # qlearning_solve(topology, mstreams)
+
+    # dqn slove
+    dqn_solve(topology, mstreams)
 
     # calc_total_latency(topology, mstreams, [1, 3, 10, 4, 9, 11, 7, 8, 5, 14, 13, 12, 2, 6, 15, 0])

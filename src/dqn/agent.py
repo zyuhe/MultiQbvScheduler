@@ -28,15 +28,6 @@ from common.funcs import *
 from common.parser import check_and_draw_topology
 from common.plot import draw_gantt_chart
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-update_interval = 50
-batch_size = 32
-memory_size = 50000
-learning_rate = 0.001
-gamma = 0.65
-input_channel = 2
-
-Transition = namedtuple('Transition', ('state', 'action', 'reward', 'long_term_reward', 'next_state'))
 
 class BaseNet(nn.Module):
     def __init__(self, net_num_nodes, output_size):
@@ -46,6 +37,7 @@ class BaseNet(nn.Module):
         self.fc3 = nn.Linear(128, output_size)
 
     def forward(self, x):
+        x = flatten(x, 1)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
@@ -56,28 +48,35 @@ class ReplayBuffer:
         self.capacity = capacity
         self.buffer = []
         self.position = 0
+        self.Transition = namedtuple('Transition', ('state', 'action', 'reward', 'long_term_reward', 'next_state'))
 
-    def push(self, state, action, reward, long_term_reward, next_state):
+    def push(self, state, action, reward, long_term_reward, next_state, device):
         if len(self.buffer) < self.capacity:
             self.buffer.append(None)
+        state = state.to(device)
+        action = action.to(device)
+        reward = reward.to(device)
+        long_term_reward = long_term_reward.to(device)
+        next_state = next_state.to(device)
         self.buffer[self.position] = (state, action, reward, long_term_reward, next_state)
         self.position = (self.position + 1) % self.capacity
 
     def sample(self, batch_size):
         batch = random.sample(self.buffer, batch_size)
-        state, action, reward, long_term_reward, next_state = zip(*batch)
-        state = torch.FloatTensor(state)
-        action = torch.LongTensor(action)
-        reward = torch.FloatTensor(reward)
-        long_term_reward = torch.FloatTensor(long_term_reward)
-        next_state = torch.FloatTensor(next_state)
+        batch = self.Transition(*zip(*batch))
+        # print(type(batch.action), type(batch.action[0]), type(batch.state), type(batch.state[0]))
+        state = torch.cat(batch.state)
+        action = torch.cat(batch.action)
+        reward = torch.cat(batch.reward)
+        long_term_reward = torch.cat(batch.long_term_reward)
+        next_state = torch.cat(batch.next_state)
         return state, action, reward, long_term_reward, next_state
 
     def __len__(self):
         return len(self.buffer)
 
 class DQN:
-    def __init__(self, topology: TopologyBase, mstreams: List[MStream], gamma=0.3, alpha=0.3, epsilon=0.9, final_epsilon=0.05, buffer_size=10000, batch_size=32):
+    def __init__(self, topology: TopologyBase, mstreams: List[MStream], gamma=0.3, alpha=0.3, epsilon=0.9, final_epsilon=0.05, buffer_size=10000, batch_size=256):
         self.mstreams = mstreams
         self.topology = topology
         self.topology_graph = check_and_draw_topology(topology)
@@ -91,13 +90,13 @@ class DQN:
         self.epsilon = epsilon  # 初始探索率
         self.final_epsilon = final_epsilon  # 最终学习率
 
-        self.device = torch.device("mps" if torch.cuda.backends.mps.is_available() else "cpu")
+        # self.device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+        self.device = torch.device("cpu")
         self.batch_size = batch_size
         self.actions = np.arange(0, len(self.mstreams))  # 创建并初始化动作空间
-        self.input_size = len(self.topology.nodes) * len(self.topology.nodes)  # 状态空间大小
         self.output_size = len(self.mstreams)  # 动作空间大小
-        self.q_network = BaseNet(self.input_size, self.output_size).to(self.device)
-        self.target_network = BaseNet(self.input_size, self.output_size).to(self.device)
+        self.q_network = BaseNet(len(self.topology.nodes), self.output_size).to(self.device)
+        self.target_network = BaseNet(len(self.topology.nodes), self.output_size).to(self.device)
         self.target_network.load_state_dict(self.q_network.state_dict())
         self.target_network.eval()
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=self.alpha)
@@ -111,14 +110,14 @@ class DQN:
         available_actions = [x for x in self.actions if x not in mstream_order]
         if np.random.rand() <= epsilon:
             # action = np.random.choice(available_actions)
-            action = torch.tensor([[random.choice(available_actions)]], dtyp=torch.long, device=self.device)
+            action = torch.tensor([[random.choice(available_actions)]], dtype=torch.long, device=self.device)
         else:
             with torch.no_grad():
                 action_values = self.q_network(state)
                 for mstream_id in mstream_order:
                     action_values[0][mstream_id] = float('-inf')
                 action = action_values.max(1)[1].view(1, 1)
-        return int(action)
+        return action
 
     def update_stream_and_topology_winInfo(self):
         for mstream in self.mstreams:
@@ -162,20 +161,21 @@ class DQN:
         return add_latency, ideal_add_latency
 
     def Transform(self, state, action, ok_num):
-        mstream = self.mstreams[action]
+        mstream = self.mstreams[int(action)]
         add_latency, ideal_add_latency = self.update_mstream_gcl(mstream)
         if add_latency <= 0:
             reward = -10000 # ???
         else:
             # TODO：update reward
             reward = -1 * round(add_latency / ideal_add_latency, 2) * mstream.size
+        reward = torch.tensor([reward], device=self.device)
         # compute new state
         next_state = state.clone()
         for node in self.topology.nodes:
             for nei_id in node.neighbor_node_ids:
                 # update state[node.id][nei_id]
                 port = node.get_port_by_neighbor_id(nei_id)
-                next_state[node.id][nei_id] = port.remaining_resorce()
+                next_state[0][node.id][nei_id] = port.remaining_resorce()
         done = True if ok_num == len(self.mstreams) - 1 else False
         return next_state, add_latency, reward, done
 
@@ -188,10 +188,10 @@ class DQN:
             mstream_order = []
             round_total_latency = 0
             # 初始化狀態
-            state = torch.full((len(self.topology.nodes), len(self.topology.nodes)), -1, device=self.device)
+            state = torch.full((1, len(self.topology.nodes), len(self.topology.nodes)), -1, device=self.device, dtype=torch.float32)
             for node in self.topology.nodes:
                 for nei_id in node.neighbor_node_ids:
-                    state[node.id][nei_id] = 1
+                    state[0][node.id][nei_id] = 1
             flag_done = False  # 完成标志
             round_reward = 0
             # 小循环-走一轮
@@ -204,10 +204,13 @@ class DQN:
                     round_reward += reward
                     round_total_latency += add_latency
                     if flag_done:
-                        self.replay_buffer.push(state, action, reward, -round_total_latency / 1000, next_state)
+                        long_term_reward = torch.tensor([-round_total_latency/1000], device=self.device)
+                        self.replay_buffer.push(state, action, reward, long_term_reward, next_state, self.device)
                     else:
-                        self.replay_buffer.push(state, action, reward, -np.inf, next_state)
-                    mstream_order.append(action)
+                        long_term_reward = torch.tensor([-np.inf], device=self.device)
+                        self.replay_buffer.push(state, action, reward, long_term_reward, next_state, self.device)
+                        state = next_state
+                    mstream_order.append(int(action))
                     if len(self.replay_buffer) >= self.batch_size:
                         states, actions, rewards, long_term_reward, next_states = self.replay_buffer.sample(self.batch_size)
                         state_action_values = self.q_network(states).gather(1, actions)
@@ -219,9 +222,9 @@ class DQN:
                         self.optimizer.zero_grad()
                         loss.backward()
                         self.optimizer.step()
-                # 衰减
-                if self.epsilon > self.final_epsilon:
-                    self.epsilon *= 0.997
+            # 衰减
+            if self.epsilon > self.final_epsilon:
+                self.epsilon *= 0.997
             # 更新目标网络
             if iter % target_update == 0:
                 self.target_network.load_state_dict(self.q_network.state_dict())
