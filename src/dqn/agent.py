@@ -110,14 +110,15 @@ class DQN:
     def Choose_action(self, mstream_order, state, epsilon):
         available_actions = [x for x in self.actions if x not in mstream_order]
         if np.random.rand() <= epsilon:
-            action = np.random.choice(available_actions)
+            # action = np.random.choice(available_actions)
+            action = torch.tensor([[random.choice(available_actions)]], dtyp=torch.long, device=self.device)
         else:
             with torch.no_grad():
-                q_values = self.q_network(state)
-                # q_values = torch.stack([q_values[i] for i in available_actions])
-                # action_index = q_values.max(0)[1].item()
-                #action = available_actions[action_index]
-        return action
+                action_values = self.q_network(state)
+                for mstream_id in mstream_order:
+                    action_values[0][mstream_id] = float('-inf')
+                action = action_values.max(1)[1].view(1, 1)
+        return int(action)
 
     def update_stream_and_topology_winInfo(self):
         for mstream in self.mstreams:
@@ -160,7 +161,6 @@ class DQN:
             return -1, -1
         return add_latency, ideal_add_latency
 
-    # TODO:
     def Transform(self, state, action, ok_num):
         mstream = self.mstreams[action]
         add_latency, ideal_add_latency = self.update_mstream_gcl(mstream)
@@ -179,7 +179,6 @@ class DQN:
         done = True if ok_num == len(self.mstreams) - 1 else False
         return next_state, add_latency, reward, done
 
-    # TODO:wrong
     def Train_Qtable(self, iter_num=1000, target_update=10):
         t1 = time.perf_counter()  # 用于进度条
         plot_iter_nums = []  # 用于绘训练效果图，横坐标集合
@@ -211,12 +210,12 @@ class DQN:
                     mstream_order.append(action)
                     if len(self.replay_buffer) >= self.batch_size:
                         states, actions, rewards, long_term_reward, next_states = self.replay_buffer.sample(self.batch_size)
-                        q_values = self.q_network(states)
-                        next_q_values = self.target_network(next_states)
-                        # TODO:dim=1 ??? gather 1????
-                        q_targets = rewards + self.gamma * torch.max(next_q_values, dim=1)[0]
-                        q_targets = q_targets.detach()
-                        loss = F.mse_loss(q_values.gather(1, actions.unsqueeze(1)), q_targets.unsqueeze(1))
+                        state_action_values = self.q_network(states).gather(1, actions)
+                        with torch.no_grad():
+                            next_state_values = self.target_network(next_states).max(1)[0]
+                        expect_state_action_values = rewards + self.gamma * next_state_values
+                        expect_state_action_values = expect_state_action_values.detach()
+                        loss = F.mse_loss(state_action_values, expect_state_action_values.unsqueeze(1))
                         self.optimizer.zero_grad()
                         loss.backward()
                         self.optimizer.step()
