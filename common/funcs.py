@@ -243,6 +243,7 @@ def update_node_win_info(topology: TopologyBase, mstream: MStream, win_plus):
 
 def calc_total_latency(topology, mstreams, mstream_order):
     total_latency = 0
+    add_latency_list = []
     topology_graph = check_and_draw_topology(topology)
     for mstream_id in mstream_order:
         mstream = mstreams[mstream_id]
@@ -278,8 +279,10 @@ def calc_total_latency(topology, mstreams, mstream_order):
             print("error update qbv")
             return -1
         total_latency += add_latency
+        add_latency_list.append(add_latency)
     print(total_latency)
-    draw_chart(mstreams)
+    print(add_latency_list)
+    # draw_chart(mstreams)
 
 def draw_chart(mstreams):
     # stream timeline

@@ -93,6 +93,11 @@ def dqn_solve(topology, mstreams):
     dqn.Train_Qtable(iter_num=2000)
     plot_latency_over_iterations(dqn.best_latency_history)
 
+def a3c_solve(topology, mstreams):
+    from src.a3c.a3c import A3C
+    a3c = A3C(topology, mstreams)
+    a3c.train()
+
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
     topology_path = "config/topology_config.yaml"
@@ -118,6 +123,9 @@ if __name__ == '__main__':
     # qlearning_solve(topology, mstreams)
 
     # dqn slove
-    dqn_solve(topology, mstreams)
+    # dqn_solve(topology, mstreams)
 
-    # calc_total_latency(topology, mstreams, [1, 3, 10, 4, 9, 11, 7, 8, 5, 14, 13, 12, 2, 6, 15, 0])
+    # a3c solve（a2c single thread) poor convergence
+    a3c_solve(topology, mstreams)
+
+    # calc_total_latency(topology, mstreams, [9, 8, 11, 3, 14, 15, 13, 12, 7, 10, 4, 5, 1, 0, 6, 2])

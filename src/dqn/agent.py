@@ -76,7 +76,7 @@ class ReplayBuffer:
         return len(self.buffer)
 
 class DQN:
-    def __init__(self, topology: TopologyBase, mstreams: List[MStream], gamma=0.3, alpha=0.3, epsilon=0.9, final_epsilon=0.05, buffer_size=10000, batch_size=256):
+    def __init__(self, topology: TopologyBase, mstreams: List[MStream], gamma=0.3, alpha=0.3, epsilon=0.9, final_epsilon=0.05, buffer_size=10000, batch_size=128):
         self.mstreams = mstreams
         self.topology = topology
         self.topology_graph = check_and_draw_topology(topology)
@@ -102,8 +102,8 @@ class DQN:
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=self.alpha)
         self.replay_buffer = ReplayBuffer(buffer_size)
         # 记录训练得到的最优路线和最差路线
-        self.good = {'path': [0], 'distance': 0, 'episode': 0}
-        self.bad = {'path': [0], 'distance': 0, 'episode': 0}
+        self.good = {'mstream_order': [], 'total_latency': 0, 'episode': 0}
+        self.bad = {'mstream_order': [], 'total_latency': 0, 'episode': 0}
 
     # TODO: wrong solution, BaseNet input and output?
     def Choose_action(self, mstream_order, state, epsilon):
@@ -168,9 +168,10 @@ class DQN:
         else:
             # TODO：update reward
             reward = -1 * round(add_latency / ideal_add_latency, 2) * mstream.size
+            # reward = -1 * (add_latency - ideal_add_latency) * mstream.size
         reward = torch.tensor([reward], device=self.device)
         # compute new state
-        next_state = state.clone()
+        next_state = state.clone().to(self.device)
         for node in self.topology.nodes:
             for nei_id in node.neighbor_node_ids:
                 # update state[node.id][nei_id]
@@ -182,6 +183,7 @@ class DQN:
     def Train_Qtable(self, iter_num=1000, target_update=10):
         t1 = time.perf_counter()  # 用于进度条
         plot_iter_nums = []  # 用于绘训练效果图，横坐标集合
+        add_latency_list = []
         self.iter_num = iter_num
         # 大循环-走iter_num轮
         for iter in range(iter_num):
@@ -203,6 +205,7 @@ class DQN:
                 else:
                     round_reward += reward
                     round_total_latency += add_latency
+                    add_latency_list.append(add_latency)
                     if flag_done:
                         long_term_reward = torch.tensor([-round_total_latency/1000], device=self.device)
                         self.replay_buffer.push(state, action, reward, long_term_reward, next_state, self.device)
@@ -213,7 +216,7 @@ class DQN:
                     mstream_order.append(int(action))
                     if len(self.replay_buffer) >= self.batch_size:
                         states, actions, rewards, long_term_reward, next_states = self.replay_buffer.sample(self.batch_size)
-                        state_action_values = self.q_network(states).gather(1, actions)
+                        state_action_values = self.q_network(states.to(self.device)).gather(1, actions.to(self.device))
                         with torch.no_grad():
                             next_state_values = self.target_network(next_states).max(1)[0]
                         expect_state_action_values = rewards + self.gamma * next_state_values
@@ -235,10 +238,12 @@ class DQN:
             if round_total_latency <= np.min(self.best_latency_history):
                 self.good['mstream_order'] = mstream_order.copy()
                 self.good['total_latency'] = round_total_latency
+                self.good['all'] = add_latency_list.copy()
                 self.good['episode'] = iter + 1
             if round_total_latency >= np.max(self.best_latency_history):
                 self.bad['mstream_order'] = mstream_order.copy()
                 self.bad['total_latency'] = round_total_latency
+                self.bad['all'] = add_latency_list.copy()
                 self.bad['episode'] = iter + 1
             # 训练进度条
             percent = (iter + 1) / iter_num
@@ -250,10 +255,10 @@ class DQN:
                  .format((iter + 1), iter_num, percent * 100, bar, delta_t,
                           pre_total_t, left_t), end='')
         # 打印训练结果
-        print('\n', "dqn_tsp result".center(40, '='))
+        print('\n', "result".center(40, '='))
         print('训练中出现的最小时延：{},出现在第 {} 次训练中'.format(self.good['total_latency'], self.good['episode']))
-        print("最短路线:", self.good['mstream_order'])
+        print("最短路线:", self.good['mstream_order'], "all:", self.good['all'])
         print('训练中出现的最大时延：{},出现在第 {} 次训练中'.format(self.bad['total_latency'], self.bad['episode']))
-        print("最长路线:", self.bad['mstream_order'])
+        print("最长路线:", self.bad['mstream_order'], "all:", self.bad['all'])
 
 
