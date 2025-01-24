@@ -63,11 +63,11 @@ class Ant(object):
                     if index != 0 and self.topology.get_node(path[index]).end_device == 1:
                         available_paths.remove(path)
                         break
-                    if next_stream.vlan_id not in self.topology.get_node(path[index]).get_port_by_neighbor_id(
-                        path[index + 1]
-                    ).allowed_vlans:
-                        available_paths.remove(path)
-                        break
+                    # if next_stream.vlan_id not in self.topology.get_node(path[index]).get_port_by_neighbor_id(
+                    #     path[index + 1]
+                    # ).allowed_vlans:
+                    #     available_paths.remove(path)
+                    #     break
             if len(available_paths) == 0:
                 print(f"==>WARNING: no viable path from {next_stream.src_node_id} to {dst_node_id}!")
                 print("             Please check stream and topology settings.")
@@ -85,7 +85,7 @@ class Ant(object):
         if add_latency < 0:
             print("error update qbv")
             return False
-        self.total_latency += add_latency
+        self.total_latency = round(self.total_latency + add_latency, 1)
         self.current_stream_id = next_stream_id
         self.unvisited_streams.remove(next_stream_id)
         return True

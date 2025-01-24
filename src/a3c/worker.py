@@ -2,7 +2,7 @@
 -*- coding: utf-8 -*-
 @Time    :   2025/1/22 23:25
 @Author  :   zyh
-@Email   :   
+@Email   :
 @Project :   MultiQbvScheduler
 @File    :   worker.py
 '''
@@ -13,6 +13,7 @@ import numpy as np
 import random
 import networkx
 from threading import Lock
+import time
 
 from common.StreamBase import MStream
 from common.TopologyBase import TopologyBase
@@ -21,11 +22,12 @@ from common.parser import check_and_draw_topology
 from src.a3c.net import ActorCriticNet
 
 class Worker:
-    def __init__(self, global_net, topology: TopologyBase, mstreams: List[MStream], optimizer, global_episode, device):
+    def __init__(self, global_net, topology: TopologyBase, mstreams: List[MStream], recorder, optimizer, global_episode, device):
         self.mstreams = mstreams  # 多个流
         self.actions = np.arange(0, len(self.mstreams))  # 创建并初始化动作空间
         self.topology = topology  # 网络拓扑结构
         self.topology_graph = check_and_draw_topology(topology)
+        self.recorder = recorder
         self.win_plus = 1000
         self.global_net = global_net  # 全局网络
         self.epsilon = 0.9
@@ -100,11 +102,11 @@ class Worker:
                     if index!= 0 and self.topology.get_node(path[index]).end_device == 1:
                         available_paths.remove(path)
                         break
-                    if mstream.vlan_id not in self.topology.get_node(path[index]).get_port_by_neighbor_id(
-                            path[index + 1]
-                    ).allowed_vlans:
-                        available_paths.remove(path)
-                        break
+                    # if mstream.vlan_id not in self.topology.get_node(path[index]).get_port_by_neighbor_id(
+                    #         path[index + 1]
+                    # ).allowed_vlans:
+                    #     available_paths.remove(path)
+                    #     break
             if len(available_paths) == 0:
                 print(f"==>WARNING: no viable path from {mstream.src_node_id} to {dst_node_id}!")
                 print("             Please check stream and topology settings.")
@@ -123,7 +125,7 @@ class Worker:
             return -1, -1
         return add_latency, ideal_add_latency
 
-    def Transform(self, state, action, ok_num):
+    def Transform(self, state, action, ok_num, episode):
         mstream = self.mstreams[int(action)]
         add_latency, ideal_add_latency = self.update_mstream_gcl(mstream)
         if add_latency <= 0:
@@ -131,8 +133,9 @@ class Worker:
         else:
             # TODO：update reward
             # reward = -1 * add_latency / ideal_add_latency * mstream.size
-            reward = -2 * (add_latency - ideal_add_latency) * mstream.size
-            reward = -1 * (add_latency - ideal_add_latency)
+            # 引入奖励衰减因子，即对每次奖励进行折扣。例如，奖励可以通过折扣因子（如 gamma）来递减，尤其在多次决策序列中，这有助于训练出 长期最优解。
+            reward = -1 * (add_latency - ideal_add_latency) * mstream.size * 0.85 ** episode
+            # reward = -1 * (add_latency - ideal_add_latency)
         reward = torch.tensor([reward], device=self.device)
         # compute new state
         next_state = state.clone().to(self.device)
@@ -150,6 +153,7 @@ class Worker:
         self.topology.clear_all_nodes_winInfo()
 
     def train(self, iter_num=1000):
+        t1 = time.perf_counter()  # 用于进度条
         for episode in range(iter_num):
             mstream_order = []
             add_latency_list = []
@@ -165,14 +169,14 @@ class Worker:
 
             while not done:
                 action = self.choose_action(mstream_order, state, self.epsilon)
-                next_state, add_latency, reward, done = self.Transform(state, action, len(mstream_order))
+                next_state, add_latency, reward, done = self.Transform(state, action, len(mstream_order), episode)
                 if add_latency == -1:
                     # self.replay_buffer.push(state, action, reward, -np.inf, next_state)
                     pass
                 else:
                     total_reward += reward
                     add_latency_list.append(add_latency)
-                    round_total_latency += add_latency
+                    round_total_latency = round(round_total_latency + add_latency, 1)
                     if done:
                         pass
                         # long_term_reward = torch.tensor([-round_total_latency/1000], device=self.device)
@@ -186,8 +190,8 @@ class Worker:
             if self.epsilon > self.final_epsilon:
                 self.epsilon *= 0.997
             # 每隔一定的 episode 更新全局网络
-            if episode % 100 == 0:
-                print(f"Episode {episode} total reward: {total_reward}")
+            # if episode % 100 == 0:
+            #     print(f"Episode {episode} total reward: {total_reward}")
             self.update_stream_and_topology_winInfo()
             self.best_latency_history.append(round_total_latency)
             # 记录最好成绩和最坏成绩
@@ -201,16 +205,25 @@ class Worker:
                 self.bad['total_latency'] = round_total_latency
                 self.bad['all'] = add_latency_list.copy()
                 self.bad['episode'] = episode + 1
+            # 训练进度条
+            percent = (episode + 1) / iter_num
+            bar = '*' * int(percent * 30) + '->'
+            delta_t = time.perf_counter() - t1
+            pre_total_t = (iter_num * delta_t) / (episode + 1)
+            left_t = pre_total_t - delta_t
+            print('\r{:6}/{:6}\t训练已完成了:{:5.2f}%[{:32}]已用时:{:5.2f}s,预计用时:{:.2f}s,预计剩余用时:{:.2f}s'
+                  .format((episode + 1), iter_num, percent * 100, bar, delta_t,
+                          pre_total_t, left_t), end='')
         # 打印训练结果
-        print('\n', "result".center(40, '='))
-        print('训练中出现的最小时延：{},出现在第 {} 次训练中'.format(self.good['total_latency'],
+        self.recorder.info("=====a3c result=====")
+        self.recorder.info('训练中出现的最小时延：{},出现在第 {} 次训练中'.format(self.good['total_latency'],
                                                                     self.good['episode']))
-        print("最短路线:", self.good['mstream_order'], "all:", self.good['all'])
-        print('训练中出现的最大时延：{},出现在第 {} 次训练中'.format(self.bad['total_latency'],
+        self.recorder.info(f"最短路线:{self.good['mstream_order']}")
+        self.recorder.info('训练中出现的最大时延：{},出现在第 {} 次训练中'.format(self.bad['total_latency'],
                                                                     self.bad['episode']))
-        print("最长路线:", self.bad['mstream_order'], "all:", self.bad['all'])
-        import matplotlib.pyplot as plt
-        plt.plot(self.best_latency_history, color='green', linewidth=2)
-        plt.show()
+        self.recorder.info(f"最短路线:{self.bad['mstream_order']}")
+        # import matplotlib.pyplot as plt
+        # plt.plot(self.best_latency_history, color='green', linewidth=2)
+        # plt.show()
 
 

@@ -24,7 +24,7 @@ from common.parser import check_and_draw_topology
 from common.plot import draw_gantt_chart
 
 class QLearning:
-    def __init__(self, topology: TopologyBase, mstreams: List[MStream], gamma=0.3, alpha=0.3, epsilon=0.9, final_epsilon=0.05):
+    def __init__(self, topology: TopologyBase, mstreams: List[MStream], recorder, gamma=0.3, alpha=0.3, epsilon=0.9, final_epsilon=0.05):
         self.mstreams = mstreams
         self.topology = topology
         self.topology_graph = check_and_draw_topology(topology)
@@ -42,6 +42,7 @@ class QLearning:
         self.bad = {'path': [0], 'distance': 0, 'episode': 0}
         self.actions = np.arange(0, len(self.mstreams))  # 创建并初始化动作空间
         self.Qtable = np.zeros((len(self.mstreams), len(self.mstreams)))  # 创建并初始化q表
+        self.recorder = recorder
 
     # 选择动作-episilon-greedy方法
     def Choose_action(self, mstream_order, epsilon, qvalue):
@@ -77,11 +78,11 @@ class QLearning:
                     if index != 0 and self.topology.get_node(path[index]).end_device == 1:
                         available_paths.remove(path)
                         break
-                    if mstream.vlan_id not in self.topology.get_node(path[index]).get_port_by_neighbor_id(
-                            path[index + 1]
-                    ).allowed_vlans:
-                        available_paths.remove(path)
-                        break
+                    # if mstream.vlan_id not in self.topology.get_node(path[index]).get_port_by_neighbor_id(
+                    #         path[index + 1]
+                    # ).allowed_vlans:
+                    #     available_paths.remove(path)
+                    #     break
             if len(available_paths) == 0:
                 print(f"==>WARNING: no viable path from {mstream.src_node_id} to {dst_node_id}!")
                 print("             Please check stream and topology settings.")
@@ -171,7 +172,7 @@ class QLearning:
                     break
                 state_next, add_latency, reward, flag_done = self.Transform(mstream_order, action)
                 round_reward += reward
-                round_total_latency += add_latency
+                round_total_latency = round(round_total_latency + add_latency, 1)
                 mstream_order.append(state_next)
                 # 更新Qtable
                 if flag_done:
@@ -193,11 +194,11 @@ class QLearning:
             # 记录最好成绩和最坏成绩
             if round_total_latency <= np.min(self.best_latency_history):
                 self.Qtable = qvalue.copy()
-                self.good['mstream_order'] = mstream_order.copy()
+                self.good['mstream_order'] = [int(index) for index in mstream_order]
                 self.good['total_latency'] = round_total_latency
                 self.good['episode'] = iter + 1
             if round_total_latency >= np.max(self.best_latency_history):
-                self.bad['mstream_order'] = mstream_order.copy()
+                self.bad['mstream_order'] = [int(index) for index in mstream_order]
                 self.bad['total_latency'] = round_total_latency
                 self.bad['episode'] = iter + 1
             # 训练进度条
@@ -210,13 +211,13 @@ class QLearning:
                   .format((iter + 1), iter_num, percent * 100, bar, delta_t,
                           pre_total_t, left_t), end='')
         # 打印训练结果
-        print('\n', "qlearning_tsp result".center(40, '='))
-        print('训练中的出现的最小时延：{},出现在第 {} 次训练中'.format(self.good['total_latency'], self.good['episode']))
-        print("最短路线:", self.good['mstream_order'])
-        print('训练中的出现的最大时延：{},出现在第 {} 次训练中'.format(self.bad['total_latency'], self.bad['episode']))
-        print("最长路线:", self.bad['mstream_order'])
+        self.recorder.info("=====qlearning result=====")
+        self.recorder.info('训练中的出现的最小时延：{},出现在第 {} 次训练中'.format(self.good['total_latency'], self.good['episode']))
+        self.recorder.info(f"最短路线:{self.good['mstream_order']}")
+        self.recorder.info('训练中的出现的最大时延：{},出现在第 {} 次训练中'.format(self.bad['total_latency'], self.bad['episode']))
+        self.recorder.info(f"最长路线:{self.bad['mstream_order']}")
         # 画训练效果图
-        self.Plot_train_process(plot_iter_nums, self.best_latency_history)
+        # self.Plot_train_process(plot_iter_nums, self.best_latency_history)
 
     # 将Q表存入本地
     def Write_Qtable(self):

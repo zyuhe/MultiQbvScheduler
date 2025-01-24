@@ -22,15 +22,15 @@ from common.parser import check_and_draw_topology
 from common.plot import draw_gantt_chart
 
 class GA(object):
-    def __init__(self, topology: TopologyBase, mstreams: List[MStream]):
+    def __init__(self, topology: TopologyBase, mstreams: List[MStream], generation, popsize):
         self.mstreams = mstreams
         self.topology = topology
         self.topology_graph = check_and_draw_topology(topology)
         self.win_plus = 1000 # ns
         self.CityNum = 20 # stream number
         # GA parameters
-        self.generation = 150 # 迭代次数
-        self.popsize = 100 # 种群大小
+        self.generation = generation # 迭代次数
+        self.popsize = popsize # 种群大小
         self.tournament_size = 5 # 锦标赛小组大小
         self.pc = 0.95 # 交叉概率
         self.pm = 0.1 # 变异概率
@@ -60,11 +60,11 @@ class GA(object):
                         if index != 0 and self.topology.get_node(path[index]).end_device == 1:
                             available_paths.remove(path)
                             break
-                        if mstream.vlan_id not in self.topology.get_node(path[index]).get_port_by_neighbor_id(
-                                path[index + 1]
-                        ).allowed_vlans:
-                            available_paths.remove(path)
-                            break
+                        # if mstream.vlan_id not in self.topology.get_node(path[index]).get_port_by_neighbor_id(
+                        #         path[index + 1]
+                        # ).allowed_vlans:
+                        #     available_paths.remove(path)
+                        #     break
                 if len(available_paths) == 0:
                     print(f"==>WARNING: no viable path from {mstream.src_node_id} to {dst_node_id}!")
                     print("             Please check stream and topology settings.")
@@ -80,7 +80,7 @@ class GA(object):
             if add_latency < 0:
                 print("error update qbv")
                 return -1
-            self.total_latency += add_latency
+            self.total_latency = round(self.total_latency + add_latency, 1)
         total_latency = self.total_latency
         self.total_latency = 0
         self.update_stream_and_topology_winInfo()
@@ -148,7 +148,6 @@ class GA(object):
 
     def run(self):
         iteration = 0
-        timeStart = time.time()
         # 随机生成每个种群初始流顺序方案
         pops = \
             [random.sample([i for i in list(range(len(self.mstreams)))], len(self.mstreams)) for
@@ -187,5 +186,3 @@ class GA(object):
             iteration += 1
 
         timeEnd = time.time()
-        print("compute ", timeEnd - timeStart, "seconds")
-

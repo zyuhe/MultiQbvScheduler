@@ -24,16 +24,16 @@ from common.parser import check_and_draw_topology
 from common.plot import draw_gantt_chart
 
 class SA(object):
-    def __init__(self, topology: TopologyBase, mstreams: List[MStream]):
+    def __init__(self, topology: TopologyBase, mstreams: List[MStream], generation, T_end):
         self.topology = topology
         self.mstreams = mstreams
         self.topology_graph = check_and_draw_topology(topology)
         self.win_plus = 1000  # ns
         # sa parameters
         self.T_base = 50000
-        self.T_end = 30
+        self.T_end = T_end
         self.anneal_rate = 0.95 #每次退火的比例 0.98
-        self.generation = 100 # 每个温度的迭代次数
+        self.generation = generation # 每个温度的迭代次数
 
         self.total_latency = 0
         self.best_latency = np.inf
@@ -73,11 +73,11 @@ class SA(object):
                         if index != 0 and self.topology.get_node(path[index]).end_device == 1:
                             available_paths.remove(path)
                             break
-                        if mstream.vlan_id not in self.topology.get_node(path[index]).get_port_by_neighbor_id(
-                                path[index + 1]
-                        ).allowed_vlans:
-                            available_paths.remove(path)
-                            break
+                        # if mstream.vlan_id not in self.topology.get_node(path[index]).get_port_by_neighbor_id(
+                        #         path[index + 1]
+                        # ).allowed_vlans:
+                        #     available_paths.remove(path)
+                        #     break
                 if len(available_paths) == 0:
                     print(f"==>WARNING: no viable path from {mstream.src_node_id} to {dst_node_id}!")
                     print("             Please check stream and topology settings.")
@@ -94,7 +94,7 @@ class SA(object):
             if add_latency < 0:
                 print("error update qbv")
                 return -1
-            self.total_latency += add_latency
+            self.total_latency = round(self.total_latency + add_latency, 1)
         total_latency = self.total_latency
         self.total_latency = 0
         self.update_stream_and_topology_winInfo()
@@ -106,7 +106,7 @@ class SA(object):
         print("initial stream order,", stream_order0)
         T = self.T_base
         anneal_cnt = 0
-        timeStart = time.time()
+        # timeStart = time.time()
         while T > self.T_end:
             round_best_total_latency = np.inf
             old_total_latency = self.calc_total_latency(stream_order0)
@@ -144,8 +144,8 @@ class SA(object):
                 self.best_path = stream_order0
             print(anneal_cnt, "annealing, T：", T, " best total latency：", round_best_total_latency)
         self.best_path = stream_order0
-        timeEnd = time.time()
-        print("algorithm use", timeEnd - timeStart, "seconds")
+        # timeEnd = time.time()
+        # print("algorithm use", timeEnd - timeStart, "seconds")
 
 
 

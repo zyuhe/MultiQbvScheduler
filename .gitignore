@@ -1,5 +1,6 @@
 output/
 savefig/
+data/
 **/__pycache__
 **/ref/
 **/data/

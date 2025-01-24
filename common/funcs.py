@@ -231,11 +231,17 @@ def update_node_win_info(topology: TopologyBase, mstream: MStream, win_plus):
                         if len(delay_start) > ti:
                             d = round(tmp_ts_open + win_len - delay_start[ti], 1)
                         else:
-                            d = round(tmp_ts_open + win_len - delay_start[ti % len(delay_start)] - mstream.interval * (ti / len(delay_start)), 1)
+                            d = round((tmp_ts_open + win_len - delay_start[ti % len(delay_start)] - mstream.interval * len(delay_start)) // 1000000, 1)
+                        # if d >= 1000000:
+                        #     print("==", d, mstream.hyper_period, ti, tmp_ts_open, win_len, delay_start[ti % len(delay_start)], mstream.interval * (len(delay_start)), delay_start)
                         delays.append(d)
                 # print("=============")
     # compute delay
-    add_latency = sum(delays) / (len(delays) / len(mstream.dst_node_ids))
+    add_latency = round(sum(delays) / (len(delays) / len(mstream.dst_node_ids)), 1)
+    # if add_latency >= 1000000:
+    #     print(mstream.id, mstream.interval, mstream.hyper_period, add_latency, sum(delays), len(delays), delays)
+    #     print(mstream.windowsInfo)
+    #     draw_chart([mstream])
     # print("mstream：", mstream.id, "src：", mstream.src_node_id, "dst：", mstream.multicast_id, "delay result：")
     # print("delays：", delays, "dst num", len(mstream.dst_node_ids),
     # "hyper times", (len(delays) / len(mstream.dst_node_ids)), "add latency：", add_latency)
@@ -259,11 +265,11 @@ def calc_total_latency(topology, mstreams, mstream_order):
                     if index != 0 and topology.get_node(path[index]).end_device == 1:
                         available_paths.remove(path)
                         break
-                    if mstream.vlan_id not in topology.get_node(path[index]).get_port_by_neighbor_id(
-                            path[index + 1]
-                    ).allowed_vlans:
-                        available_paths.remove(path)
-                        break
+                    # if mstream.vlan_id not in topology.get_node(path[index]).get_port_by_neighbor_id(
+                    #         path[index + 1]
+                    # ).allowed_vlans:
+                    #     available_paths.remove(path)
+                    #     break
             if len(available_paths) == 0:
                 print(f"==>WARNING: no viable path from {mstream.src_node_id} to {dst_node_id}!")
                 print("             Please check stream and topology settings.")
@@ -289,7 +295,7 @@ def draw_chart(mstreams):
     for mstream in mstreams:
         name = f'mstream_{mstream.id}_src_{mstream.src_node_id}_dst_{mstream.multicast_id}_pcp_{mstream.pcp}'
         mstream_timeline = []
-        print(name, mstream.windowsInfo)
+        # print(name, mstream.windowsInfo)
         for k, v in mstream.windowsInfo.items():
             for info in v[2:]:
                 mstream_timeline.append([info[1], round(info[1] + info[2], 1), k, 0, info[3]])

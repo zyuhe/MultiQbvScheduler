@@ -8,6 +8,7 @@
 '''
 
 import networkx
+import os
 import yaml
 import shutil
 import matplotlib.pyplot as plt
@@ -260,8 +261,8 @@ def check_and_draw_topology(topology: TopologyBase):
     for link in topology.links:
         G.add_edge(link.src_node, link.dst_node, port1=link.src_port, port2=link.dst_port)
     # pos = networkx.spring_layout(G, iterations=200)
-    pos = networkx.circular_layout(G)
-    networkx.draw(G, pos, with_labels=True)
+    # pos = networkx.circular_layout(G)
+    # networkx.draw(G, pos, with_labels=True)
     # for debug
     # plt.show()
     return G

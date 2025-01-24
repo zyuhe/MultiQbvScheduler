@@ -59,16 +59,17 @@ store in yaml file
 def generate_streams(stream_count, topology: TopologyBase, yaml_file_path):
     begin_time = time.time_ns()
     streams_info = list()
-    optional_size = [i*100 for i in range(1, 16)]
-    optional_interval = [i*100000 for i in [2, 3, 4, 5, 10]]
+    optional_size = [i * 100 for i in [1, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 4, 4, 5, 5, 8, 8, 10, 10, 10, 12, 14, 15]]
+    optional_interval = [i * 100000 for i in [10, 10, 10, 10, 10, 20, 20, 20, 50, 50]]
     optional_vlan_id = [10, 20, 30]
     optional_pcp = [i for i in range(8)]
     count = 0
     if len(topology.end_devices) == 0:
         print("ERROR: no end device!")
+    multi_id = 0
     while count < stream_count:
         test_time = time.time_ns()
-        if test_time - begin_time > 5000000000:
+        if test_time - begin_time > 20000000000:
             print("ERROR: generate streams yaml file overtime!")
             return False
         src_node_id = random.choice(topology.end_devices)
@@ -83,6 +84,7 @@ def generate_streams(stream_count, topology: TopologyBase, yaml_file_path):
                 break
         if len(dst_node_ids) != 0:
             streams_info.append({
+                "multicast_id": multi_id,
                 "src_node_id": src_node_id,
                 "dst_node_ids": dst_node_ids,
                 "size": random.choice(optional_size),
@@ -92,6 +94,7 @@ def generate_streams(stream_count, topology: TopologyBase, yaml_file_path):
                 "max_latency": 1000000,
                 "max_jitter": 1000000
             })
+            multi_id = multi_id + 1
     with open(yaml_file_path, "w", encoding="utf-8") as f:
         yaml.dump(streams_info, f)
     end_time = time.time_ns()
@@ -124,9 +127,10 @@ def gene_a_stream(topology: TopologyBase, uni_id):
     optional_vlan_id_all = list(set(optional_vlan_id_all))
     if len(optional_vlan_id_all) == 0:
         print(f"Error! no allowed vlan from {sender} to {receiver}")
-    optional_size = [i * 100 for i in [1, 2, 5, 5, 8, 8, 8, 10, 10, 10, 10, 12, 12, 14]]
+    optional_size = [i * 100 for i in [1, 2, 5, 5, 8, 8, 8, 10, 10, 10, 10, 12, 12, 14, 15]]
     optional_interval = [i * 100000 for i in [10, 10, 10, 10, 10, 20, 20, 20, 50, 50]]
-    optional_pcp = [3, 4, 5, 6, 7]
+    # optional_pcp = [3, 4, 5, 6, 7]
+    optional_pcp = [i for i in range(8)]
     size = random.choice(optional_size)
     interval = random.choice(optional_interval)
     vlan = random.choice(optional_vlan_id_all)

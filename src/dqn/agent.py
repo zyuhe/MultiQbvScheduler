@@ -76,10 +76,11 @@ class ReplayBuffer:
         return len(self.buffer)
 
 class DQN:
-    def __init__(self, topology: TopologyBase, mstreams: List[MStream], gamma=0.3, alpha=0.3, epsilon=0.9, final_epsilon=0.05, buffer_size=10000, batch_size=128):
+    def __init__(self, topology: TopologyBase, mstreams: List[MStream], recorder, gamma=0.3, alpha=0.3, epsilon=0.9, final_epsilon=0.05, buffer_size=10000, batch_size=128):
         self.mstreams = mstreams
         self.topology = topology
         self.topology_graph = check_and_draw_topology(topology)
+        self.recorder = recorder
         self.win_plus = 1000  # ns
         self.CityNum = 20  # stream number
         self.best_latency_history = []
@@ -137,11 +138,11 @@ class DQN:
                     if index!= 0 and self.topology.get_node(path[index]).end_device == 1:
                         available_paths.remove(path)
                         break
-                    if mstream.vlan_id not in self.topology.get_node(path[index]).get_port_by_neighbor_id(
-                            path[index + 1]
-                    ).allowed_vlans:
-                        available_paths.remove(path)
-                        break
+                    # if mstream.vlan_id not in self.topology.get_node(path[index]).get_port_by_neighbor_id(
+                    #         path[index + 1]
+                    # ).allowed_vlans:
+                    #     available_paths.remove(path)
+                    #     break
             if len(available_paths) == 0:
                 print(f"==>WARNING: no viable path from {mstream.src_node_id} to {dst_node_id}!")
                 print("             Please check stream and topology settings.")
@@ -160,14 +161,14 @@ class DQN:
             return -1, -1
         return add_latency, ideal_add_latency
 
-    def Transform(self, state, action, ok_num):
+    def Transform(self, state, action, ok_num, iter):
         mstream = self.mstreams[int(action)]
         add_latency, ideal_add_latency = self.update_mstream_gcl(mstream)
         if add_latency <= 0:
             reward = -10000 # ???
         else:
             # TODO：update reward
-            reward = -1 * round(add_latency / ideal_add_latency, 2) * mstream.size
+            reward = -1 * round(add_latency / ideal_add_latency, 2) * mstream.size*1**iter
             # reward = -1 * (add_latency - ideal_add_latency) * mstream.size
         reward = torch.tensor([reward], device=self.device)
         # compute new state
@@ -183,11 +184,11 @@ class DQN:
     def Train_Qtable(self, iter_num=1000, target_update=10):
         t1 = time.perf_counter()  # 用于进度条
         plot_iter_nums = []  # 用于绘训练效果图，横坐标集合
-        add_latency_list = []
         self.iter_num = iter_num
         # 大循环-走iter_num轮
         for iter in range(iter_num):
             mstream_order = []
+            add_latency_list = []
             round_total_latency = 0
             # 初始化狀態
             state = torch.full((1, len(self.topology.nodes), len(self.topology.nodes)), -1, device=self.device, dtype=torch.float32)
@@ -199,12 +200,12 @@ class DQN:
             # 小循环-走一轮
             while flag_done == False:  # 没完成
                 action = self.Choose_action(mstream_order, state, self.epsilon)
-                next_state, add_latency, reward, flag_done = self.Transform(state, action, len(mstream_order))
+                next_state, add_latency, reward, flag_done = self.Transform(state, action, len(mstream_order), iter)
                 if add_latency == -1:
                     self.replay_buffer.push(state, action, reward, -np.inf, next_state)
                 else:
                     round_reward += reward
-                    round_total_latency += add_latency
+                    round_total_latency = round(round_total_latency + add_latency, 1)
                     add_latency_list.append(add_latency)
                     if flag_done:
                         long_term_reward = torch.tensor([-round_total_latency/1000], device=self.device)
@@ -255,10 +256,10 @@ class DQN:
                  .format((iter + 1), iter_num, percent * 100, bar, delta_t,
                           pre_total_t, left_t), end='')
         # 打印训练结果
-        print('\n', "result".center(40, '='))
-        print('训练中出现的最小时延：{},出现在第 {} 次训练中'.format(self.good['total_latency'], self.good['episode']))
-        print("最短路线:", self.good['mstream_order'], "all:", self.good['all'])
-        print('训练中出现的最大时延：{},出现在第 {} 次训练中'.format(self.bad['total_latency'], self.bad['episode']))
-        print("最长路线:", self.bad['mstream_order'], "all:", self.bad['all'])
+        self.recorder.info("=====dqn result=====")
+        self.recorder.info('训练中出现的最小时延：{},出现在第 {} 次训练中'.format(self.good['total_latency'], self.good['episode']))
+        self.recorder.info(f"最短路线:{self.good['mstream_order']}")
+        self.recorder.info('训练中出现的最大时延：{},出现在第 {} 次训练中'.format(self.bad['total_latency'], self.bad['episode']))
+        self.recorder.info(f"最短路线:{self.bad['mstream_order']}")
 
 
