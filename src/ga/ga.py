@@ -38,6 +38,7 @@ class GA(object):
         self.total_latency = 0
         self.best_latency_history = []
         self.best_path = []
+        self.failures = 0
 
     def update_stream_and_topology_winInfo(self):
         for mstream in self.mstreams:
@@ -79,7 +80,7 @@ class GA(object):
             add_latency = update_node_win_info(self.topology, mstream, self.win_plus) # update self.total_latency
             if add_latency < 0:
                 print("error update qbv")
-                return -1
+                return np.inf
             self.total_latency = round(self.total_latency + add_latency, 1)
         total_latency = self.total_latency
         self.total_latency = 0
@@ -155,6 +156,7 @@ class GA(object):
         fits = [None] * self.popsize
         for i in range(self.popsize):
             fits[i] = self.calc_total_latency(pops[i])
+        self.failures += np.sum(np.isinf(np.array(fits)))
 
         best_fit = min(fits)
         best_pop = pops[fits.index(best_fit)]
@@ -172,6 +174,7 @@ class GA(object):
             child_fits = [None] * self.popsize
             for i in range(self.popsize):
                 child_fits[i] = self.calc_total_latency(child_pops[i])
+            self.failures += np.sum(np.isinf(np.array(child_fits)))
             # 一对一生存者竞争
             for i in range(self.popsize):
                 if fits[i] > child_fits[i]:
@@ -184,5 +187,4 @@ class GA(object):
             self.best_path = best_pop
             print('No. %d version best %.1f' % (iteration, best_fit))
             iteration += 1
-
-        timeEnd = time.time()
+        self.failures = round(self.failures / self.popsize * self.generation, 2)

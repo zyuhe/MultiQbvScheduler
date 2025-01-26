@@ -84,12 +84,14 @@ class DQN:
         self.win_plus = 1000  # ns
         self.CityNum = 20  # stream number
         self.best_latency_history = []
+        self.best_latency_history2 = []
         self.best_path = []
         # dqn parameters
         self.gamma = gamma  # 折扣因子
         self.alpha = alpha  # 学习率
         self.epsilon = epsilon  # 初始探索率
         self.final_epsilon = final_epsilon  # 最终学习率
+        self.failures = 0
 
         # self.device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
         self.device = torch.device("cpu")
@@ -158,18 +160,18 @@ class DQN:
         add_latency = update_node_win_info(self.topology, mstream, self.win_plus)  # update self.total_latency
         if add_latency < 0:
             print("error update qbv")
-            return -1, -1
+            return np.inf, ideal_add_latency
         return add_latency, ideal_add_latency
 
     def Transform(self, state, action, ok_num, iter):
         mstream = self.mstreams[int(action)]
         add_latency, ideal_add_latency = self.update_mstream_gcl(mstream)
-        if add_latency <= 0:
-            reward = -10000 # ???
-        else:
-            # TODO：update reward
-            reward = -1 * round(add_latency / ideal_add_latency, 2) * mstream.size*1**iter
-            # reward = -1 * (add_latency - ideal_add_latency) * mstream.size
+        # if add_latency <= 0:
+        #     reward = -10000 # ???
+        # else:
+        #     # TODO：update reward
+        reward = -1 * round(add_latency / ideal_add_latency, 2) * mstream.size*1**iter
+        # reward = -1 * (add_latency - ideal_add_latency) * mstream.size
         reward = torch.tensor([reward], device=self.device)
         # compute new state
         next_state = state.clone().to(self.device)
@@ -185,6 +187,7 @@ class DQN:
         t1 = time.perf_counter()  # 用于进度条
         plot_iter_nums = []  # 用于绘训练效果图，横坐标集合
         self.iter_num = iter_num
+        fail_cnt = 0
         # 大循环-走iter_num轮
         for iter in range(iter_num):
             mstream_order = []
@@ -201,7 +204,7 @@ class DQN:
             while flag_done == False:  # 没完成
                 action = self.Choose_action(mstream_order, state, self.epsilon)
                 next_state, add_latency, reward, flag_done = self.Transform(state, action, len(mstream_order), iter)
-                if add_latency == -1:
+                if add_latency == np.inf:
                     self.replay_buffer.push(state, action, reward, -np.inf, next_state)
                 else:
                     round_reward += reward
@@ -227,6 +230,8 @@ class DQN:
                         loss.backward()
                         self.optimizer.step()
             # 衰减
+            if round_total_latency == np.inf:
+                fail_cnt += 1
             if self.epsilon > self.final_epsilon:
                 self.epsilon *= 0.997
             # 更新目标网络
@@ -241,6 +246,9 @@ class DQN:
                 self.good['total_latency'] = round_total_latency
                 self.good['all'] = add_latency_list.copy()
                 self.good['episode'] = iter + 1
+                self.best_latency_history2.append(round_total_latency)
+            else:
+                self.best_latency_history2.append(self.best_latency_history2[-1])
             if round_total_latency >= np.max(self.best_latency_history):
                 self.bad['mstream_order'] = mstream_order.copy()
                 self.bad['total_latency'] = round_total_latency
@@ -256,6 +264,7 @@ class DQN:
                  .format((iter + 1), iter_num, percent * 100, bar, delta_t,
                           pre_total_t, left_t), end='')
         # 打印训练结果
+        self.failures = round(fail_cnt / iter_num, 2)
         self.recorder.info("=====dqn result=====")
         self.recorder.info('训练中出现的最小时延：{},出现在第 {} 次训练中'.format(self.good['total_latency'], self.good['episode']))
         self.recorder.info(f"最短路线:{self.good['mstream_order']}")

@@ -6,11 +6,13 @@
 @Project :   MultiQbvScheduler
 @File    :   main.py
 '''
+import csv
 import logging
 import sys
 import numpy as np
 import datetime
 import matplotlib.pyplot as plt
+from scipy.optimize import curve_fit
 
 from src.smt.solver import *
 from common.conf_generator import *
@@ -36,15 +38,52 @@ def mcompute(topology: TopologyBase, mstreams: List[MStream]):
         sanone_sw_converse_instruction(port_timelines, hyper_period)
         turn_stream_info_to_trdp_config_xml(streams, topology, mapping_file_path1, mapping_file_path2, output_xml_path_pre)
 
-def plot_latency_over_iterations(best_latency_history, solver, save_dir):
-    x = [x for x in range(len(best_latency_history))]
-    plt.plot(x, best_latency_history, 'r', label="Best Latency")
-    plt.title(f"Total Latency Over Iterations {(solver)}")
-    plt.xlabel("Iteration")
-    plt.ylabel("Latency")
-    plt.legend()
-    plt.show()
-    plt.savefig(f"{save_dir}/best_latency_hist_{solver}.jpg", bbox_inches='tight', dpi=300)
+# 曲线拟合函数
+def fit_func(x, a, b, c):
+    return a * np.exp(-b * x) + c  # 指数衰减曲线
+# 幂律衰减
+def power_law(x, A, a, C):
+    return A * x**(-a) + C
+# 对数衰减
+def log_decay(x, A, a, B):
+    return A * np.log(x + a) + B
+
+def plot_latency_over_iterations(best_latency_history, solver, save_dir, recorder):
+    x = np.array([x+1 for x in range(len(best_latency_history))])
+    best_latency_history = np.array(best_latency_history)
+    # y_error = np.sqrt(best_latency_history)
+    try:
+        # 拟合
+        if solver != "sa1":
+            p0 = [1, 1, min(best_latency_history)]  # power_law
+            # p0 = [-10000, 1, min(best_latency_history)-1] # log_decay
+            params, _ = curve_fit(power_law, x, best_latency_history, p0=p0, maxfev=20000)
+            a, b, c = params
+            recorder.info(f"幂律衰减拟合参数：a={a}, b={b}, c={c}")
+            # 绘制原始数据并添加误差棒
+            # plt.errorbar(x, best_latency_history, yerr=y_error, fmt='o', label='Original Data', color='blue')
+            y_fit = power_law(x, *params)
+            conv_time = len(best_latency_history)
+            for yi in range(len(y_fit)):
+                if y_fit[yi] < min(best_latency_history):
+                    conv_time = yi
+                    break
+            plt.plot(x, y_fit, label='Fitted Curve', color='g', linestyle='--')
+    except Exception as e:
+        print(e)
+    finally:
+        plt.plot(x, best_latency_history, 'r', label="Best Latency")
+        plt.title(f"Total Latency Over Iterations {(solver)}")
+        plt.xlabel("Iteration")
+        plt.ylabel("Latency")
+        plt.legend()
+        plt.savefig(f"{save_dir}/best_latency_hist_{solver}.jpg", bbox_inches='tight', dpi=300)
+        plt.show()
+        data_to_write = [[latency] for latency in best_latency_history]
+        with open(f"{save_dir}/best_latency_hist_{solver}.csv", 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerows(data_to_write)
+        return conv_time, round(b, 2)
 
 def aco_solve(topology, mstreams, ns_dir_path, recorder):
     from src.aco.Aco import Aco
@@ -57,71 +96,90 @@ def aco_solve(topology, mstreams, ns_dir_path, recorder):
             dis[d] = 100000 / mstreams[d].size
     np.fill_diagonal(distances, 0)
     streamGraph = StreamGraph(mstreams, distances)
-    aco = Aco(streamGraph, topology, num_ants=20,num_iterations=100)
-    best_path, best_latency = aco.run()
+    times_every_iter = 100
+    aco = Aco(streamGraph, topology, num_ants=times_every_iter,num_iterations=150)
+    best_path, best_latency, failures = aco.run()
     best_path = [int(x) for x in best_path]
     te = time.time()
     recorder.info(f"best latency: {min(aco.best_latency_history)}")
     recorder.info(f"best path：{best_path}")
     recorder.info(f"run {te-ts} seconds")
-    plot_latency_over_iterations(aco.best_latency_history, "aco", ns_dir_path)
+    ret_blh = [num for num in aco.best_latency_history for _ in range(times_every_iter)]
+    return best_path, best_latency, ret_blh, failures
 
 def ga_solve(topology, mstreams, ns_dir_path, recorder):
     from src.ga.ga import GA
     recorder.info("=== solve using GA ===")
     ts = time.time()
-    ga = GA(topology, mstreams, 150, 100)
+    times_every_iter = 100
+    ga = GA(topology, mstreams, 200, times_every_iter)
     ga.run()
     te = time.time()
     recorder.info(f"best latency: {ga.best_latency_history[len(ga.best_latency_history)-1]}")
     recorder.info(f"best path：{ga.best_path}")
     recorder.info(f"run {te-ts} seconds")
-    plot_latency_over_iterations(ga.best_latency_history, "ga", ns_dir_path)
+    ret_blh = [num for num in ga.best_latency_history for _ in range(times_every_iter)]
+    return ga.best_path, ga.best_latency_history[len(ga.best_latency_history)-1], ret_blh, ga.failures
 
 def sa_solve(topology, mstreams, ns_dir_path, recorder):
     from src.sa.sa import SA
     recorder.info("=== solve using SA ===")
     ts = time.time()
-    sa = SA(topology, mstreams, 100, 10)
+    times_every_iter = 100
+    sa = SA(topology, mstreams, times_every_iter, 10)
     sa.run()
     te = time.time()
     recorder.info(f"best latency: {sa.best_latency}")
     recorder.info(f"best path：{sa.best_path}")
     recorder.info(f"run {te-ts} seconds")
-    plot_latency_over_iterations(sa.best_latency_history, "sa", ns_dir_path)
+    ret_blh = [num for num in sa.best_latency_history2 for _ in range(times_every_iter)]
+    return sa.best_path, sa.best_latency, ret_blh, sa.failures
 
 def qlearning_solve(topology, mstreams, ns_dir_path, recorder):
     from src.qlearning.qlearning import QLearning
     recorder.info("=== solve using Q-Learning ===")
     ts = time.time()
-    ql = QLearning(topology, mstreams, recorder, alpha=0.01, gamma=0.8, epsilon=0.5, final_epsilon=0.05)
-    ql.Train_Qtable(iter_num=2000)
+    ql = QLearning(topology, mstreams, recorder, alpha=0.3, gamma=0.3, epsilon=0.9, final_epsilon=0.05)
+    ql.Train_Qtable(iter_num=1500)
     # 保存Q表
     ql.Write_Qtable()
     te = time.time()
     recorder.info(f"run {te - ts} seconds")
-    plot_latency_over_iterations(ql.best_latency_history, "q-learning", ns_dir_path)
+    return ql.good['mstream_order'], ql.good['total_latency'], ql.best_latency_history2, ql.failures
 
 def dqn_solve(topology, mstreams, ns_dir_path, recorder):
     from src.dqn.agent import DQN
     recorder.info("=== solve using DQN ===")
     ts = time.time()
     dqn = DQN(topology, mstreams, recorder)
-    dqn.Train_Qtable(iter_num=2000)
+    dqn.Train_Qtable(iter_num=3000)
     te = time.time()
     recorder.info(f"run {te - ts} seconds")
-    plot_latency_over_iterations(dqn.best_latency_history, "dqn", ns_dir_path)
+    return dqn.good['mstream_order'], dqn.good['total_latency'], dqn.best_latency_history2, dqn.failures
 
 def a3c_solve(topology, mstreams, ns_dir_path, recorder):
     from src.a3c.a3c import A3C
     recorder.info("=== solve using A3C ===")
     ts = time.time()
-    a3c = A3C(topology, mstreams, recorder)
-    a3c.train(num_workers=3, iter_num=1000)
+    a3c = A3C(topology, mstreams, recorder, alpha=0.3)
+    # num_workers=1：a2c else a3c
+    a3c.train(num_workers=1, iter_num=2000)
     te = time.time()
     recorder.info(f"run {te - ts} seconds")
     for i in range(len(a3c.workers)):
-        plot_latency_over_iterations(a3c.workers[i].best_latency_history, f"a3c_worker{i}", ns_dir_path)
+        return a3c.workers[i].good['mstream_order'], a3c.workers[i].good['total_latency'], a3c.workers[i].best_latency_history2, a3c.workers[i].failures
+
+def xsolve(topology, mstreams, ns_dir_path, recorder, solvers):
+    res_list = []
+    for solver in solvers:
+        func_name = f"{solver}_solve"
+        if func_name in globals():
+            best_path, best_latency, best_latency_hist, failures = globals()[func_name](topology, mstreams, ns_dir_path, recorder)
+            conv_time, conv_spd = plot_latency_over_iterations(best_latency_hist, solver, ns_dir_path, recorder) # return conv time, conv spd,
+            res_list.append([solver, best_latency, conv_time, conv_spd, failures])
+        else:
+            print(f"No solver found for {solver}")
+    return res_list
 
 def init_recorder(log_dir):
     # 创建日志记录器
@@ -150,7 +208,7 @@ def init_recorder(log_dir):
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-
+    # 收敛时间，最小值，收敛速度，调度成功率
     topology_path = "config/topology_config3.yaml"
     streams_path = "config/stream_config2.yaml"
     mapping_file_path = "config/simu_topo2trdp.yaml"
@@ -161,7 +219,8 @@ if __name__ == '__main__':
     current_datetime = datetime.datetime.now()
     dir_datetime = current_datetime.strftime("%Y-%m-%d-%H-%M-%S")
     os.mkdir(f"./data/{dir_datetime}")
-    for n in [50, 100]:
+    data_res = {}
+    for n in [10, 20]:
     # for n in [10, 20, 30, 50, 80, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800]:
         current_datetime = datetime.datetime.now()
         formatted_datetime = current_datetime.strftime("%Y-%m-%d-%H-%M-%S")
@@ -171,24 +230,17 @@ if __name__ == '__main__':
         recorder = init_recorder(recorder_dir)
         gen_streams_path = f"{ns_dir_path}/gen_{n}_stream_config_{formatted_datetime}.yaml"
         if generate_streams(n, topology, gen_streams_path):
+            ts = time.time()
             streams_path = gen_streams_path
             mstreams = mstream_parser(streams_path)
             # compute(topo, streams) smt
             # mcompute(topology, mstreams)
-            # aco 蚁群算法
-            # TODO：turn to 1 function
-            # TODO：statistics, best latency, convergence time used, success rate
-            aco_solve(topology, mstreams, ns_dir_path, recorder)
-            # ga 遗传算法
-            ga_solve(topology, mstreams, ns_dir_path, recorder)
-            # sa 模拟退火
-            sa_solve(topology, mstreams, ns_dir_path, recorder)
-            # q-learning
-            qlearning_solve(topology, mstreams, ns_dir_path, recorder)
-            # dqn slove
-            dqn_solve(topology, mstreams, ns_dir_path, recorder)
-            # a3c solve（a2c single thread) poor convergence
-            a3c_solve(topology, mstreams, ns_dir_path, recorder)
+            solvers = ['aco', 'ga', 'sa', 'qlearning', 'dqn', 'a3c']
+            r = xsolve(topology, mstreams, ns_dir_path, recorder, solvers)
+            data_res[n] = r
+            recorder.info(data_res)
+            te =time.time()
+            recorder.info(f"all solver run {te - ts} seconds")
             # ll = random.sample([i for i in list(range(len(mstreams)))], len(mstreams))
             # print(ll)
             # calc_total_latency(topology, mstreams, ll)
@@ -207,3 +259,7 @@ if __name__ == '__main__':
                     if len(port_timeline) > 0:
                         draw_gantt_chart(name, port_timeline, port.hyper_period)
             '''
+    print(data_res)
+
+    # draw statistics pic
+

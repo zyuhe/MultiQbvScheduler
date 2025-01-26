@@ -31,6 +31,7 @@ class QLearning:
         self.win_plus = 1000  # ns
         self.CityNum = 20  # stream number
         self.best_latency_history = []
+        self.best_latency_history2 = []
         self.best_path = []
         # ql parameters
         self.gamma = gamma  # 折扣因子
@@ -43,6 +44,7 @@ class QLearning:
         self.actions = np.arange(0, len(self.mstreams))  # 创建并初始化动作空间
         self.Qtable = np.zeros((len(self.mstreams), len(self.mstreams)))  # 创建并初始化q表
         self.recorder = recorder
+        self.failures = 0
 
     # 选择动作-episilon-greedy方法
     def Choose_action(self, mstream_order, epsilon, qvalue):
@@ -98,7 +100,7 @@ class QLearning:
         add_latency = update_node_win_info(self.topology, mstream, self.win_plus)  # update self.total_latency
         if add_latency < 0:
             print("error update qbv")
-            return -1, -1
+            return np.inf, ideal_add_latency
         return add_latency, ideal_add_latency
 
     # 和环境交互返回(s,a)下的reward和flag_done
@@ -106,8 +108,6 @@ class QLearning:
         mstream = self.mstreams[action]
         new_state = action
         add_latency, ideal_add_latency = self.update_mstream_gcl(mstream)
-        if add_latency < 0:
-            return -1, -1, -1, False
         # TODO：update reward
         reward = -1 * round(add_latency / ideal_add_latency, 2) * mstream.size
         # reward = -1000 * round(add_latency / ideal_add_latency, 2)
@@ -156,6 +156,7 @@ class QLearning:
         qvalue = self.Qtable.copy()
         plot_iter_nums = []  # 用于绘训练效果图，横坐标集合
         self.iter_num = iter_num
+        fail_cnt = 0
         # 大循环-走iter_num轮
         for iter in range(iter_num):
             mstream_order = []  # 重置路线记录
@@ -184,6 +185,8 @@ class QLearning:
                     q_target = reward + gamma * qvalue[state_next, action1]
                 qvalue[state, action] = qvalue[state, action] + alpha * (q_target - qvalue[state, action])
                 state = state_next # 状态转移
+            if round_total_latency == np.inf:
+                fail_cnt += 1
             self.update_stream_and_topology_winInfo()
             # 衰减
             if epsilon > self.final_epsilon:
@@ -197,6 +200,9 @@ class QLearning:
                 self.good['mstream_order'] = [int(index) for index in mstream_order]
                 self.good['total_latency'] = round_total_latency
                 self.good['episode'] = iter + 1
+                self.best_latency_history2.append(round_total_latency)
+            else:
+                self.best_latency_history2.append(self.best_latency_history2[-1])
             if round_total_latency >= np.max(self.best_latency_history):
                 self.bad['mstream_order'] = [int(index) for index in mstream_order]
                 self.bad['total_latency'] = round_total_latency
@@ -211,6 +217,7 @@ class QLearning:
                   .format((iter + 1), iter_num, percent * 100, bar, delta_t,
                           pre_total_t, left_t), end='')
         # 打印训练结果
+        self.failures = round(fail_cnt / iter_num, 2)
         self.recorder.info("=====qlearning result=====")
         self.recorder.info('训练中的出现的最小时延：{},出现在第 {} 次训练中'.format(self.good['total_latency'], self.good['episode']))
         self.recorder.info(f"最短路线:{self.good['mstream_order']}")

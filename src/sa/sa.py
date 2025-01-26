@@ -38,7 +38,9 @@ class SA(object):
         self.total_latency = 0
         self.best_latency = np.inf
         self.best_latency_history = []
+        self.best_latency_history2 = []
         self.best_path = []
+        self.failures = 0
 
     def init_stream_order(self):
         return random.sample([i for i in list(range(len(self.mstreams)))], len(self.mstreams))
@@ -93,7 +95,7 @@ class SA(object):
             add_latency = update_node_win_info(self.topology, mstream, self.win_plus) # update self.total_latency
             if add_latency < 0:
                 print("error update qbv")
-                return -1
+                return np.inf
             self.total_latency = round(self.total_latency + add_latency, 1)
         total_latency = self.total_latency
         self.total_latency = 0
@@ -106,15 +108,20 @@ class SA(object):
         print("initial stream order,", stream_order0)
         T = self.T_base
         anneal_cnt = 0
+        fail_cnt = 0
         # timeStart = time.time()
         while T > self.T_end:
             round_best_total_latency = np.inf
             old_total_latency = self.calc_total_latency(stream_order0)
+            if old_total_latency == np.inf:
+                fail_cnt += 1
             if old_total_latency < round_best_total_latency:
                 round_best_total_latency = old_total_latency
             for i in range(self.generation):
                 new_stream_order = self.generate_new_stream_order(stream_order0)
                 new_total_latency = self.calc_total_latency(new_stream_order)
+                if new_total_latency == np.inf:
+                    fail_cnt += 1
                 # TODO： parameter to adjust
                 df = (new_total_latency - old_total_latency) / 50
                 if df >= 0:
@@ -142,8 +149,12 @@ class SA(object):
             if self.best_latency > round_best_total_latency:
                 self.best_latency = round_best_total_latency
                 self.best_path = stream_order0
+                self.best_latency_history2.append(round_best_total_latency)
+            else:
+                self.best_latency_history2.append(self.best_latency_history2[-1])
             print(anneal_cnt, "annealing, T：", T, " best total latency：", round_best_total_latency)
         self.best_path = stream_order0
+        self.failures = round(fail_cnt / self.generation * anneal_cnt, 2)
         # timeEnd = time.time()
         # print("algorithm use", timeEnd - timeStart, "seconds")
 

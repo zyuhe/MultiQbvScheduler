@@ -40,18 +40,21 @@ class Aco(object):
 
     def run(self):
         best_path = None
-        # best_latency = np.inf
+        best_latency = np.inf
         print("num iterations: ", self.num_iterations, "num ants: ", self.num_ants)
+        failures = 0
         for i in range(self.num_iterations):
-            best_latency = np.inf
+            # best_latency = np.inf
             print("iteration {} ".format(i))
             ants = [Ant(self.streamGraph, self.topology) for _ in range(self.num_ants)]
             for ant in ants:
                 if ant.complete_solution() and ant.total_latency < best_latency:
                     best_path = ant.path
                     best_latency = ant.total_latency
+                elif not ant.complete_solution():
+                    failures += 1
                 self.update_stream_and_topology_winInfo()
             self.update_pheromones(ants)
             self.best_latency_history.append(best_latency)
             self.best_path_latency_history.append(best_path)
-        return best_path, best_latency
+        return best_path, best_latency, round(failures / self.num_iterations * self.num_ants, 2)

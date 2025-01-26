@@ -22,12 +22,14 @@ from common.parser import check_and_draw_topology
 from src.a3c.net import ActorCriticNet
 
 class Worker:
-    def __init__(self, global_net, topology: TopologyBase, mstreams: List[MStream], recorder, optimizer, global_episode, device):
+    def __init__(self, global_net, topology: TopologyBase, mstreams: List[MStream], recorder, global_episode, device, alpha=0.3, gamma=0.85):
         self.mstreams = mstreams  # 多个流
         self.actions = np.arange(0, len(self.mstreams))  # 创建并初始化动作空间
         self.topology = topology  # 网络拓扑结构
         self.topology_graph = check_and_draw_topology(topology)
         self.recorder = recorder
+        self.alpha = alpha
+        self.gamma = gamma
         self.win_plus = 1000
         self.global_net = global_net  # 全局网络
         self.epsilon = 0.9
@@ -35,12 +37,14 @@ class Worker:
         self.local_net = ActorCriticNet(len(self.topology.nodes), len(self.mstreams))  # 每个工作线程一个本地网络
         self.local_net.load_state_dict(self.global_net.state_dict())  # 初始化为全局网络的权重
         # self.optimizer = optimizer    # 全局优化器
-        self.optimizer = torch.optim.Adam(self.local_net.parameters(), lr=1e-4)  # 不共享优化器
+        self.optimizer = torch.optim.Adam(self.local_net.parameters(), lr=self.alpha)  # 不共享优化器
         self.lock = Lock()  # 用于同步对优化器的访问
         self.global_episode = global_episode
         self.device = device
+        self.failures = 0
 
         self.best_latency_history = []
+        self.best_latency_history2 = []
         # 记录训练得到的最优路线和最差路线
         self.good = {'mstream_order': [], 'total_latency': 0, 'episode': 0}
         self.bad = {'mstream_order': [], 'total_latency': 0, 'episode': 0}
@@ -122,20 +126,20 @@ class Worker:
         add_latency = update_node_win_info(self.topology, mstream, self.win_plus)  # update self.total_latency
         if add_latency < 0:
             print("error update qbv")
-            return -1, -1
+            return np.inf, ideal_add_latency
         return add_latency, ideal_add_latency
 
     def Transform(self, state, action, ok_num, episode):
         mstream = self.mstreams[int(action)]
         add_latency, ideal_add_latency = self.update_mstream_gcl(mstream)
-        if add_latency <= 0:
-            reward = -10000 # ???
-        else:
-            # TODO：update reward
-            # reward = -1 * add_latency / ideal_add_latency * mstream.size
-            # 引入奖励衰减因子，即对每次奖励进行折扣。例如，奖励可以通过折扣因子（如 gamma）来递减，尤其在多次决策序列中，这有助于训练出 长期最优解。
-            reward = -1 * (add_latency - ideal_add_latency) * mstream.size * 0.85 ** episode
-            # reward = -1 * (add_latency - ideal_add_latency)
+        # if add_latency <= 0:
+        #     reward = -10000 # ???
+        # else:
+        #     # TODO：update reward
+        reward = -1 * round(add_latency / ideal_add_latency, 2) * mstream.size * self.gamma ** episode
+        # 引入奖励衰减因子，即对每次奖励进行折扣。例如，奖励可以通过折扣因子（如 gamma）来递减，尤其在多次决策序列中，这有助于训练出 长期最优解。
+        # reward = -1 * (add_latency - ideal_add_latency) * mstream.size * 0.85 ** episode
+        # reward = -1 * (add_latency - ideal_add_latency)
         reward = torch.tensor([reward], device=self.device)
         # compute new state
         next_state = state.clone().to(self.device)
@@ -154,6 +158,7 @@ class Worker:
 
     def train(self, iter_num=1000):
         t1 = time.perf_counter()  # 用于进度条
+        fail_cnt = 0
         for episode in range(iter_num):
             mstream_order = []
             add_latency_list = []
@@ -186,12 +191,14 @@ class Worker:
                     mstream_order.append(int(action))
                     loss = self.compute_loss(state, action, reward, next_state, done)
                     self.update_global(loss)
+            if round_total_latency == np.inf:
+                fail_cnt += 1
             # 衰减
             if self.epsilon > self.final_epsilon:
                 self.epsilon *= 0.997
             # 每隔一定的 episode 更新全局网络
-            # if episode % 100 == 0:
-            #     print(f"Episode {episode} total reward: {total_reward}")
+            if episode % 100 == 0:
+                print(f"Episode {episode} total reward: {total_reward}")
             self.update_stream_and_topology_winInfo()
             self.best_latency_history.append(round_total_latency)
             # 记录最好成绩和最坏成绩
@@ -200,21 +207,25 @@ class Worker:
                 self.good['total_latency'] = round_total_latency
                 self.good['all'] = add_latency_list.copy()
                 self.good['episode'] = episode + 1
+                self.best_latency_history2.append(round_total_latency)
+            else:
+                self.best_latency_history2.append(self.best_latency_history2[-1])
             if round_total_latency >= np.max(self.best_latency_history):
                 self.bad['mstream_order'] = mstream_order.copy()
                 self.bad['total_latency'] = round_total_latency
                 self.bad['all'] = add_latency_list.copy()
                 self.bad['episode'] = episode + 1
-            # 训练进度条
-            percent = (episode + 1) / iter_num
-            bar = '*' * int(percent * 30) + '->'
-            delta_t = time.perf_counter() - t1
-            pre_total_t = (iter_num * delta_t) / (episode + 1)
-            left_t = pre_total_t - delta_t
-            print('\r{:6}/{:6}\t训练已完成了:{:5.2f}%[{:32}]已用时:{:5.2f}s,预计用时:{:.2f}s,预计剩余用时:{:.2f}s'
-                  .format((episode + 1), iter_num, percent * 100, bar, delta_t,
-                          pre_total_t, left_t), end='')
+            # # 训练进度条
+            # percent = (episode + 1) / iter_num
+            # bar = '*' * int(percent * 30) + '->'
+            # delta_t = time.perf_counter() - t1
+            # pre_total_t = (iter_num * delta_t) / (episode + 1)
+            # left_t = pre_total_t - delta_t
+            # print('\r{:6}/{:6}\t训练已完成了:{:5.2f}%[{:32}]已用时:{:5.2f}s,预计用时:{:.2f}s,预计剩余用时:{:.2f}s'
+            #       .format((episode + 1), iter_num, percent * 100, bar, delta_t,
+            #               pre_total_t, left_t), end='')
         # 打印训练结果
+        self.failures = round(fail_cnt / iter_num, 2)
         self.recorder.info("=====a3c result=====")
         self.recorder.info('训练中出现的最小时延：{},出现在第 {} 次训练中'.format(self.good['total_latency'],
                                                                     self.good['episode']))
