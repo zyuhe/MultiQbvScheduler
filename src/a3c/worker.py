@@ -197,8 +197,8 @@ class Worker:
             if self.epsilon > self.final_epsilon:
                 self.epsilon *= 0.997
             # 每隔一定的 episode 更新全局网络
-            if episode % 100 == 0:
-                print(f"Episode {episode} total reward: {total_reward}")
+            # if episode % 100 == 0:
+            #     print(f"Episode {episode} total reward: {total_reward}")
             self.update_stream_and_topology_winInfo()
             self.best_latency_history.append(round_total_latency)
             # 记录最好成绩和最坏成绩
@@ -227,12 +227,12 @@ class Worker:
         # 打印训练结果
         self.failures = round(fail_cnt / iter_num, 2)
         self.recorder.info("=====a3c result=====")
-        self.recorder.info('训练中出现的最小时延：{},出现在第 {} 次训练中'.format(self.good['total_latency'],
+        self.recorder.info('a2c 训练中出现的最小时延：{},出现在第 {} 次训练中'.format(self.good['total_latency'],
                                                                     self.good['episode']))
-        self.recorder.info(f"最短路线:{self.good['mstream_order']}")
-        self.recorder.info('训练中出现的最大时延：{},出现在第 {} 次训练中'.format(self.bad['total_latency'],
+        self.recorder.info(f"a2c 最短路线:{self.good['mstream_order']}")
+        self.recorder.info('a2c 训练中出现的最大时延：{},出现在第 {} 次训练中'.format(self.bad['total_latency'],
                                                                     self.bad['episode']))
-        self.recorder.info(f"最短路线:{self.bad['mstream_order']}")
+        self.recorder.info(f"a2c 最短路线:{self.bad['mstream_order']}")
         # import matplotlib.pyplot as plt
         # plt.plot(self.best_latency_history, color='green', linewidth=2)
         # plt.show()

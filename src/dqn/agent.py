@@ -255,20 +255,20 @@ class DQN:
                 self.bad['all'] = add_latency_list.copy()
                 self.bad['episode'] = iter + 1
             # 训练进度条
-            percent = (iter + 1) / iter_num
-            bar = '*' * int(percent * 30) + '->'
-            delta_t = time.perf_counter() - t1
-            pre_total_t = (iter_num * delta_t) / (iter + 1)
-            left_t = pre_total_t - delta_t
-            print('\r{:6}/{:6}\t训练已完成了:{:5.2f}%[{:32}]已用时:{:5.2f}s,预计用时:{:.2f}s,预计剩余用时:{:.2f}s'
-                 .format((iter + 1), iter_num, percent * 100, bar, delta_t,
-                          pre_total_t, left_t), end='')
+            # percent = (iter + 1) / iter_num
+            # bar = '*' * int(percent * 30) + '->'
+            # delta_t = time.perf_counter() - t1
+            # pre_total_t = (iter_num * delta_t) / (iter + 1)
+            # left_t = pre_total_t - delta_t
+            # print('\r{:6}/{:6}\t训练已完成了:{:5.2f}%[{:32}]已用时:{:5.2f}s,预计用时:{:.2f}s,预计剩余用时:{:.2f}s'
+            #      .format((iter + 1), iter_num, percent * 100, bar, delta_t,
+            #               pre_total_t, left_t), end='')
         # 打印训练结果
         self.failures = round(fail_cnt / iter_num, 2)
         self.recorder.info("=====dqn result=====")
-        self.recorder.info('训练中出现的最小时延：{},出现在第 {} 次训练中'.format(self.good['total_latency'], self.good['episode']))
-        self.recorder.info(f"最短路线:{self.good['mstream_order']}")
-        self.recorder.info('训练中出现的最大时延：{},出现在第 {} 次训练中'.format(self.bad['total_latency'], self.bad['episode']))
-        self.recorder.info(f"最短路线:{self.bad['mstream_order']}")
+        self.recorder.info('dqn 训练中出现的最小时延：{},出现在第 {} 次训练中'.format(self.good['total_latency'], self.good['episode']))
+        self.recorder.info(f"dqn 最短路线:{self.good['mstream_order']}")
+        self.recorder.info('dqn 训练中出现的最大时延：{},出现在第 {} 次训练中'.format(self.bad['total_latency'], self.bad['episode']))
+        self.recorder.info(f"dqn 最短路线:{self.bad['mstream_order']}")
 
 

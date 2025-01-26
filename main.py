@@ -6,13 +6,19 @@
 @Project :   MultiQbvScheduler
 @File    :   main.py
 '''
+
+import copy
+import concurrent.futures
 import csv
 import logging
+import logging.handlers
 import sys
 import numpy as np
 import datetime
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
+import multiprocessing
+from multiprocessing import Queue
 
 from src.smt.solver import *
 from common.conf_generator import *
@@ -59,7 +65,7 @@ def plot_latency_over_iterations(best_latency_history, solver, save_dir, recorde
             # p0 = [-10000, 1, min(best_latency_history)-1] # log_decay
             params, _ = curve_fit(power_law, x, best_latency_history, p0=p0, maxfev=20000)
             a, b, c = params
-            recorder.info(f"幂律衰减拟合参数：a={a}, b={b}, c={c}")
+            recorder.info(f"{solver} 幂律衰减拟合参数：a={a}, b={b}, c={c}")
             # 绘制原始数据并添加误差棒
             # plt.errorbar(x, best_latency_history, yerr=y_error, fmt='o', label='Original Data', color='blue')
             y_fit = power_law(x, *params)
@@ -78,7 +84,7 @@ def plot_latency_over_iterations(best_latency_history, solver, save_dir, recorde
         plt.ylabel("Latency")
         plt.legend()
         plt.savefig(f"{save_dir}/best_latency_hist_{solver}.jpg", bbox_inches='tight', dpi=300)
-        plt.show()
+        # plt.show()
         data_to_write = [[latency] for latency in best_latency_history]
         with open(f"{save_dir}/best_latency_hist_{solver}.csv", 'w', newline='') as f:
             writer = csv.writer(f)
@@ -101,9 +107,9 @@ def aco_solve(topology, mstreams, ns_dir_path, recorder):
     best_path, best_latency, failures = aco.run()
     best_path = [int(x) for x in best_path]
     te = time.time()
-    recorder.info(f"best latency: {min(aco.best_latency_history)}")
-    recorder.info(f"best path：{best_path}")
-    recorder.info(f"run {te-ts} seconds")
+    recorder.info(f"aco best latency: {min(aco.best_latency_history)}")
+    recorder.info(f"aco best path：{best_path}")
+    recorder.info(f"aco run {te-ts} seconds")
     ret_blh = [num for num in aco.best_latency_history for _ in range(times_every_iter)]
     return best_path, best_latency, ret_blh, failures
 
@@ -115,9 +121,9 @@ def ga_solve(topology, mstreams, ns_dir_path, recorder):
     ga = GA(topology, mstreams, 200, times_every_iter)
     ga.run()
     te = time.time()
-    recorder.info(f"best latency: {ga.best_latency_history[len(ga.best_latency_history)-1]}")
-    recorder.info(f"best path：{ga.best_path}")
-    recorder.info(f"run {te-ts} seconds")
+    recorder.info(f"ga best latency: {ga.best_latency_history[len(ga.best_latency_history)-1]}")
+    recorder.info(f"ga best path：{ga.best_path}")
+    recorder.info(f"ga run {te-ts} seconds")
     ret_blh = [num for num in ga.best_latency_history for _ in range(times_every_iter)]
     return ga.best_path, ga.best_latency_history[len(ga.best_latency_history)-1], ret_blh, ga.failures
 
@@ -129,9 +135,9 @@ def sa_solve(topology, mstreams, ns_dir_path, recorder):
     sa = SA(topology, mstreams, times_every_iter, 10)
     sa.run()
     te = time.time()
-    recorder.info(f"best latency: {sa.best_latency}")
-    recorder.info(f"best path：{sa.best_path}")
-    recorder.info(f"run {te-ts} seconds")
+    recorder.info(f"sa best latency: {sa.best_latency}")
+    recorder.info(f"sa best path：{sa.best_path}")
+    recorder.info(f"sa run {te-ts} seconds")
     ret_blh = [num for num in sa.best_latency_history2 for _ in range(times_every_iter)]
     return sa.best_path, sa.best_latency, ret_blh, sa.failures
 
@@ -144,7 +150,7 @@ def qlearning_solve(topology, mstreams, ns_dir_path, recorder):
     # 保存Q表
     ql.Write_Qtable()
     te = time.time()
-    recorder.info(f"run {te - ts} seconds")
+    recorder.info(f"ql run {te - ts} seconds")
     return ql.good['mstream_order'], ql.good['total_latency'], ql.best_latency_history2, ql.failures
 
 def dqn_solve(topology, mstreams, ns_dir_path, recorder):
@@ -154,7 +160,7 @@ def dqn_solve(topology, mstreams, ns_dir_path, recorder):
     dqn = DQN(topology, mstreams, recorder)
     dqn.Train_Qtable(iter_num=3000)
     te = time.time()
-    recorder.info(f"run {te - ts} seconds")
+    recorder.info(f"dqn run {te - ts} seconds")
     return dqn.good['mstream_order'], dqn.good['total_latency'], dqn.best_latency_history2, dqn.failures
 
 def a3c_solve(topology, mstreams, ns_dir_path, recorder):
@@ -165,46 +171,76 @@ def a3c_solve(topology, mstreams, ns_dir_path, recorder):
     # num_workers=1：a2c else a3c
     a3c.train(num_workers=1, iter_num=2000)
     te = time.time()
-    recorder.info(f"run {te - ts} seconds")
+    recorder.info(f"a3c run {te - ts} seconds")
     for i in range(len(a3c.workers)):
         return a3c.workers[i].good['mstream_order'], a3c.workers[i].good['total_latency'], a3c.workers[i].best_latency_history2, a3c.workers[i].failures
 
+
+def solve_solver(solver, topology, mstreams, ns_dir_path, recorder):
+    func_name = f"{solver}_solve"
+    if func_name in globals():
+        # 使用 deepcopy 确保 topology 和 mstreams 不会在进程间互相干扰
+        topology_copy = copy.deepcopy(topology)
+        mstreams_copy = copy.deepcopy(mstreams)
+        # 调用相应的求解器函数
+        best_path, best_latency, best_latency_hist, failures = globals()[func_name](topology_copy, mstreams_copy,
+                                                                                    ns_dir_path, recorder)
+        # 绘制并获取收敛时间和速度
+        conv_time, conv_spd = plot_latency_over_iterations(best_latency_hist, solver, ns_dir_path, recorder)
+        return [solver, best_latency, conv_time, conv_spd, failures]
+    else:
+        print(f"No solver found for {solver}")
+        return [solver, None, None, None, None]  # 如果找不到对应的求解器，返回空值
+
+
 def xsolve(topology, mstreams, ns_dir_path, recorder, solvers):
     res_list = []
-    for solver in solvers:
-        func_name = f"{solver}_solve"
-        if func_name in globals():
-            best_path, best_latency, best_latency_hist, failures = globals()[func_name](topology, mstreams, ns_dir_path, recorder)
-            conv_time, conv_spd = plot_latency_over_iterations(best_latency_hist, solver, ns_dir_path, recorder) # return conv time, conv spd,
-            res_list.append([solver, best_latency, conv_time, conv_spd, failures])
-        else:
-            print(f"No solver found for {solver}")
+    # 使用 ProcessPoolExecutor 进行多进程执行
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        # 使用 submit 提交每个 solver 的任务
+        futures = [executor.submit(solve_solver, solver, topology, mstreams, ns_dir_path, recorder) for solver in
+                   solvers]
+        for future in concurrent.futures.as_completed(futures):
+            res_list.append(future.result())
+
     return res_list
 
+# def xsolve(topology, mstreams, ns_dir_path, recorder, solvers):
+#     res_list = []
+#     for solver in solvers:
+#         func_name = f"{solver}_solve"
+#         if func_name in globals():
+#             best_path, best_latency, best_latency_hist, failures = globals()[func_name](topology, mstreams, ns_dir_path, recorder)
+#             conv_time, conv_spd = plot_latency_over_iterations(best_latency_hist, solver, ns_dir_path, recorder) # return conv time, conv spd,
+#             res_list.append([solver, best_latency, conv_time, conv_spd, failures])
+#         else:
+#             print(f"No solver found for {solver}")
+#     return res_list
+
 def init_recorder(log_dir):
-    # 创建日志记录器
     recorder = logging.getLogger()
     recorder.setLevel(logging.INFO)  # 设置日志级别
 
-    # 创建控制台处理器
+    log_queue = Queue()
+
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)  # 控制台日志级别
 
-    # 创建文件处理器
     log_file = f"{log_dir}/record.log"
     file_handler = logging.FileHandler(log_file)
     file_handler.setLevel(logging.INFO)  # 文件日志级别
 
-    # 创建日志格式器
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
     console_handler.setFormatter(formatter)
     file_handler.setFormatter(formatter)
 
-    # 将处理器添加到日志记录器
-    recorder.addHandler(console_handler)
-    recorder.addHandler(file_handler)
+    queue_handler = logging.handlers.QueueHandler(log_queue)
+    recorder.addHandler(queue_handler)
 
-    return recorder
+    listener = logging.handlers.QueueListener(log_queue, console_handler, file_handler)
+    listener.start()
+
+    return recorder, listener
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
@@ -220,14 +256,14 @@ if __name__ == '__main__':
     dir_datetime = current_datetime.strftime("%Y-%m-%d-%H-%M-%S")
     os.mkdir(f"./data/{dir_datetime}")
     data_res = {}
-    for n in [10, 20]:
+    for n in [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 800, 900, 1000]:
     # for n in [10, 20, 30, 50, 80, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800]:
         current_datetime = datetime.datetime.now()
         formatted_datetime = current_datetime.strftime("%Y-%m-%d-%H-%M-%S")
         ns_dir_path = f"./data/{dir_datetime}/{n}"
         os.mkdir(f"{ns_dir_path}")
         recorder_dir = ns_dir_path  # 设置日志保存目录
-        recorder = init_recorder(recorder_dir)
+        recorder, listener = init_recorder(recorder_dir)
         gen_streams_path = f"{ns_dir_path}/gen_{n}_stream_config_{formatted_datetime}.yaml"
         if generate_streams(n, topology, gen_streams_path):
             ts = time.time()
@@ -241,6 +277,7 @@ if __name__ == '__main__':
             recorder.info(data_res)
             te =time.time()
             recorder.info(f"all solver run {te - ts} seconds")
+            listener.stop()
             # ll = random.sample([i for i in list(range(len(mstreams)))], len(mstreams))
             # print(ll)
             # calc_total_latency(topology, mstreams, ll)
